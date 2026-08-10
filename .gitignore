@@ -1,0 +1,55 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python environments and caches
+.venv/
+venv/
+env/
+.conda/
+.conda-envs/
+.miniconda3/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ROS / colcon workspace outputs at repository root
+/build/
+/install/
+/log/
+/.colcon/
+
+# Data, generated artifacts, models, and runtime logs
+*.mcap
+*.mcap.*
+*.parquet
+*.h5
+*.hdf5
+*.zarr/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+/datasets/
+/models/
+/artifacts/
+/runs/
+/logs/
+*.log
+**/.cache/
+**/checkpoints/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
