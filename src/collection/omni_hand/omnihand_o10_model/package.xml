@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>omnihand_o10_model</name>
+  <version>0.1.0</version>
+  <description>
+    Node-less version-locked OmniHand O10 model asset package. Loads and
+    structurally validates the left/right generated URDF, left/right MJCF and
+    provenance manifest from the ament install space (or an external read-only
+    fixture path before the upstream license is confirmed). No runtime nodes.
+    Upstream model assets are NOT vendored here pending license confirmation
+    (see ADR-0007).
+  </description>
+  <maintainer email="noreply@dexhit.local">Dexhit</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>ament_cmake_python</build_depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>omnihand_o10_contracts</exec_depend>
+
+  <!-- pinocchio is NOT a declared dependency. Building the 16-dim kinematic
+       model with pinocchio is intentionally BLOCKED_ENV until it is installed;
+       see omnihand_o10_model.pinocchio_model. Structural URDF/MJCF validation
+       does not require pinocchio. -->
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

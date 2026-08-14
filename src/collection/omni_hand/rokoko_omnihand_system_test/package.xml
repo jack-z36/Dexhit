@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rokoko_omnihand_system_test</name>
+  <version>0.1.0</version>
+  <description>Deterministic in-process O10 software provider and system-test package. Emulates the O10 wire contract without the vendor omnihand_node package (ARCHITECTURE A09, A04).</description>
+  <maintainer email="noreply@dexhit.local">Dexhit</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>rokoko_omnihand_msgs</depend>
+  <depend>omnihand_o10_contracts</depend>
+  <depend>rokoko_hand_receiver</depend>
+  <depend>hand_retargeting</depend>
+  <depend>omnihand_o10_control</depend>
+  <depend>omnihand_o10_model</depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

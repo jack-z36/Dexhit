@@ -1,0 +1,4 @@
+# Deliberately not an executable default configuration.
+# Copy this file outside the repository, fill every required parameter, and
+# pass it explicitly as parameters:=/absolute/path/to/production.yaml.
+# The production launch refuses a missing parameter file.

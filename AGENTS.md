@@ -14,3 +14,17 @@
 | 查询具体任务进度 | [当前状态](DOCS/03_工程/00_当前状态.md) |
 
 任务跨越多个类型时，读取所有对应入口。默认不读取 [archive](DOCS/98_archive/INDEX.md) 和 [learning](DOCS/99_learning/INDEX.md)，除非用户明确要求历史追溯或学习资料。
+
+## Agent skills
+
+### Issue tracker
+
+Issues 和 specs 以 GitHub issues 形式存在（仓库 jack-z36/Dexhit），用 `gh` CLI 操作。见 [DOCS/02_约束/编程执行/issue-tracker.md](DOCS/02_约束/编程执行/issue-tracker.md)。
+
+### Triage labels
+
+使用五个规范 triage 角色标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 [DOCS/02_约束/编程执行/triage-labels.md](DOCS/02_约束/编程执行/triage-labels.md)。
+
+### Domain docs
+
+单上下文布局：仓库根 `CONTEXT.md` + `DOCS/01_知识/ADR/`。见 [DOCS/02_约束/编程执行/domain-docs.md](DOCS/02_约束/编程执行/domain-docs.md)。

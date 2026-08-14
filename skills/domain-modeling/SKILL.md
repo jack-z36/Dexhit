@@ -14,10 +14,11 @@ Most repos have a single context:
 ```
 /
 ├── CONTEXT.md
-├── docs/
-│   └── adr/
-│       ├── 0001-event-sourced-orders.md
-│       └── 0002-postgres-for-write-model.md
+├── DOCS/
+│   └── 01_知识/
+│       └── ADR/
+│           ├── 0001-event-sourced-orders.md
+│           └── 0002-postgres-for-write-model.md
 └── src/
 ```
 
@@ -26,18 +27,17 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The ma
 ```
 /
 ├── CONTEXT-MAP.md
-├── docs/
-│   └── adr/                          ← system-wide decisions
-├── src/
-│   ├── ordering/
-│   │   ├── CONTEXT.md
-│   │   └── docs/adr/                 ← context-specific decisions
-│   └── billing/
-│       ├── CONTEXT.md
-│       └── docs/adr/
+├── DOCS/
+│   └── 01_知识/
+│       └── ADR/                       ← all decisions, single root
+└── src/
+    ├── ordering/
+    │   └── CONTEXT.md
+    └── billing/
+        └── CONTEXT.md
 ```
 
-Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
+Per-context decisions still go into the single `DOCS/01_知识/ADR/` with a scope line in the ADR body — this repo keeps one ADR root, not one per context. Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `DOCS/01_知识/ADR/` exists, create it when the first ADR is needed.
 
 ## During the session
 

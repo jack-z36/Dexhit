@@ -1,15 +1,13 @@
 ---
 name: teach
-description: Teach the user a new skill or concept, within this workspace.
-disable-model-invocation: true
-argument-hint: "What would you like to learn about?"
+description: Teach the user a new skill or concept over multiple stateful sessions within the current workspace, producing lessons, reference sheets, and learning records grounded in a mission document. Use when the user asks to learn something, wants a teaching session, or says "teach me".
 ---
 
 The user has asked you to teach them something. This is a stateful request - they intend to learn the topic over multiple sessions.
 
 ## Teaching Workspace
 
-Treat the current directory as a teaching workspace. The state of their learning is captured in this directory in several files:
+Treat `DOCS/99_learning/<topic>/` as the teaching workspace, where `<topic>` is a dash-case slug derived from what the user wants to learn (e.g. `o10-ik-basics`). The state of their learning is captured under that directory in several files:
 
 - `MISSION.md`: A document capturing the _reason_ the user is interested in the topic. This should be used to ground all teaching. Use the format in [MISSION-FORMAT.md](./MISSION-FORMAT.md).
 - `./reference/*.html`: A directory of reference materials. These are the compressed learnings from the lessons - cheat sheets, reference algorithms, syntax, yoga poses, glossaries. They are the raw units of learning. They should be beautiful documents which print out well, and are designed for quick reference.
@@ -18,6 +16,8 @@ Treat the current directory as a teaching workspace. The state of their learning
 - `./lessons/*.html`: A directory of lessons. A **lesson** is a single, self-contained HTML output that teaches one tightly-scoped thing tied to the mission. This is the primary unit of teaching in this workspace.
 - `./assets/*`: Reusable **components** shared across lessons. See [Assets](#assets).
 - `NOTES.md`: A scratchpad for you to jot down user preferences, or working notes.
+
+When you create a new `<topic>/` directory, register it in `DOCS/99_learning/INDEX.md` per the repo's 文档维护规则 (§3 INDEX rules). Learning material is non-default context, so it lives under 99_learning — never write teaching files to the repo root or into the engineering source tree.
 
 ## Philosophy
 

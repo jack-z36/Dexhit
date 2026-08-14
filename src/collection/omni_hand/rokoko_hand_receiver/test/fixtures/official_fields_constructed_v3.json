@@ -1,0 +1,63 @@
+{
+  "version": 3,
+  "fps": 60,
+  "scene": {
+    "timestamp": 1234.5,
+    "actors": [
+      {
+        "name": "DexhitFixtureActor",
+        "meta": {
+          "hasGloves": true,
+          "hasLeftGlove": true,
+          "hasRightGlove": true,
+          "hasBody": true,
+          "hasFace": false
+        },
+        "body": {
+          "rightLittleTip": {"position": {"x": 120, "y": 121, "z": 122}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftIndexMedial": {"position": {"x": 6, "y": 7, "z": 8}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 2}},
+          "rightHand": {"position": {"x": 100, "y": 101, "z": 102}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftHand": {"position": {"x": 0, "y": 1, "z": 2}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftThumbProximal": {"position": {"x": 1, "y": 2, "z": 3}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftThumbMedial": {"position": {"x": 2, "y": 3, "z": 4}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftThumbDistal": {"position": {"x": 3, "y": 4, "z": 5}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftThumbTip": {"position": {"x": 4, "y": 5, "z": 6}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftIndexProximal": {"position": {"x": 5, "y": 6, "z": 7}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftIndexDistal": {"position": {"x": 7, "y": 8, "z": 9}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftIndexTip": {"position": {"x": 8, "y": 9, "z": 10}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftMiddleProximal": {"position": {"x": 9, "y": 10, "z": 11}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftMiddleMedial": {"position": {"x": 10, "y": 11, "z": 12}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftMiddleDistal": {"position": {"x": 11, "y": 12, "z": 13}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftMiddleTip": {"position": {"x": 12, "y": 13, "z": 14}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftRingProximal": {"position": {"x": 13, "y": 14, "z": 15}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftRingMedial": {"position": {"x": 14, "y": 15, "z": 16}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftRingDistal": {"position": {"x": 15, "y": 16, "z": 17}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftRingTip": {"position": {"x": 16, "y": 17, "z": 18}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftLittleProximal": {"position": {"x": 17, "y": 18, "z": 19}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftLittleMedial": {"position": {"x": 18, "y": 19, "z": 20}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftLittleDistal": {"position": {"x": 19, "y": 20, "z": 21}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "leftLittleTip": {"position": {"x": 20, "y": 21, "z": 22}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightThumbProximal": {"position": {"x": 101, "y": 102, "z": 103}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightThumbMedial": {"position": {"x": 102, "y": 103, "z": 104}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightThumbDistal": {"position": {"x": 103, "y": 104, "z": 105}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightThumbTip": {"position": {"x": 104, "y": 105, "z": 106}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightIndexProximal": {"position": {"x": 105, "y": 106, "z": 107}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightIndexMedial": {"position": {"x": 106, "y": 107, "z": 108}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightIndexDistal": {"position": {"x": 107, "y": 108, "z": 109}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightIndexTip": {"position": {"x": 108, "y": 109, "z": 110}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightMiddleProximal": {"position": {"x": 109, "y": 110, "z": 111}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightMiddleMedial": {"position": {"x": 110, "y": 111, "z": 112}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightMiddleDistal": {"position": {"x": 111, "y": 112, "z": 113}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightMiddleTip": {"position": {"x": 112, "y": 113, "z": 114}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightRingProximal": {"position": {"x": 113, "y": 114, "z": 115}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightRingMedial": {"position": {"x": 114, "y": 115, "z": 116}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightRingDistal": {"position": {"x": 115, "y": 116, "z": 117}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightRingTip": {"position": {"x": 116, "y": 117, "z": 118}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightLittleProximal": {"position": {"x": 117, "y": 118, "z": 119}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightLittleMedial": {"position": {"x": 118, "y": 119, "z": 120}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+          "rightLittleDistal": {"position": {"x": 119, "y": 120, "z": 121}, "rotation": {"x": 0, "y": 0, "z": 0, "w": 1}}
+        }
+      }
+    ]
+  }
+}

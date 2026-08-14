@@ -4,3 +4,11 @@
 
 - [项目总览](00_项目总览.md)：Dexhit 的范围、主链和当前不承诺事项。
 - [模块边界与数据流](01_模块边界与数据流.md)：四阶段的输入、职责、输出和边界。
+- [OmniHand O10 控制契约与模块边界](02_OmniHand_O10控制契约与模块边界.md)：O10 双手控制数据流、模块职责、关节命令契约、限位和硬件隔离边界。
+- [人手归一化与 OmniHand O10 单指 IK 算法基线](03_人手归一化与O10单指IK算法基线.md)：已确认的符号体系、人体坐标与尺度归一化、O10 目标、机械耦合、单指 IK 损失及失败保持语义。
+- [Rokoko 原始手部帧 ROS 接口契约](04_Rokoko原始手部帧ROS接口契约.md)：接收节点到重定向节点的 RawHandFrame 字段、双侧 Topic、时间坐标和 21 节点顺序。
+- [手部重定向状态 ROS 接口契约](05_手部重定向状态ROS接口契约.md)：逐侧 RetargetingState 的阶段、逐指尺度/IK、残差、求解器和恢复进度语义。
+- [O10 控制状态 ROS 接口契约](06_O10控制状态ROS接口契约.md)：逐侧 O10ControlState 的独立安全门、阶段、目标处理、硬限速、故障位和时间语义。
+- [O10 操作者控制操作 ROS 接口契约](07_O10操作者控制操作ROS接口契约.md)：逐侧 arm、disarm、clear_fault Service 的共用请求—应答外壳、原子性和状态快照语义。
+- [Codebase Architecture](ARCHITECTURE.md)：Rokoko 到 OmniHand O10 实时手部遥操作系统的运行时上下文、代码层级、ROS 包边界、依赖 DAG、Port/Provider、状态所有权和可机械执行的架构门禁。
+- [O10 架构决策](ADR/INDEX.md)：O10 控制链中难以逆转且需要保留理由的架构选择。

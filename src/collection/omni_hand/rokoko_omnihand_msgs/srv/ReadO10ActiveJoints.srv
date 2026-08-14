@@ -1,0 +1,13 @@
+# Empty request. Side is identified by the service name.
+---
+uint8 READ_SUCCESS=0
+uint8 READ_DEVICE_UNAVAILABLE=1
+uint8 READ_HARDWARE_ERROR=2
+uint8 READ_INVALID_RESULT=3
+uint8 READ_INTERNAL_ERROR=4
+
+bool success
+uint8 result_code
+string message
+builtin_interfaces/Time sample_stamp
+float64[10] position

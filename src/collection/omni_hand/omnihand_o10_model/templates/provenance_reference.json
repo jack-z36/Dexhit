@@ -1,0 +1,12 @@
+{
+  "declared_license": "Apache-2.0",
+  "files": {
+    "mjcf/omnihand_left.xml": "dfb6ce44e24b17cb775ac3b2f57347a939a27c2b75d6ac99604608bc0aa7608f",
+    "mjcf/omnihand_right.xml": "fca8c46104b25ec55218d95ebe54b9ca670fdf0309c354e854dbc15ac6e939df",
+    "urdf/omnihand_left.urdf": "f92d89e4a173e4cf9cbb3bd3edb548d6d14d2da878e07c5d22ec948ba64ae572",
+    "urdf/omnihand_right.urdf": "7a9150a3865eb40cb8434951efe63787da94c15c068ef81e157a252b09871bed"
+  },
+  "license_confirmed": false,
+  "upstream_commit": "f4fd0d913c2151bcb4be0d29fbc02761b9638009",
+  "upstream_repo": "https://github.com/manusvr/ManusOmniBridge.git"
+}

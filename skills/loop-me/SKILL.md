@@ -1,8 +1,6 @@
 ---
 name: loop-me
-description: Grill me about specs for the workflows I want to build, within this workspace.
-disable-model-invocation: true
-argument-hint: "A workflow to design, or nothing to go find one"
+description: Run a stateful grilling session that designs workflow specs for the user's recurring loops within the current workspace. Use when the user asks to design a workflow, specify a recurring activity/loop, or says "loop me".
 ---
 
 Run a stateful `/grilling` session whose only output is **workflow** specs. Use the grilling discipline — relentless, a round of questions at a time, a recommended answer attached to each — aimed at the vocabulary and goal below. Create, edit, and delete specs as the grilling resolves things.
@@ -28,5 +26,7 @@ A workflow spec is done when an implementer agent could build it without asking 
 
 ## The workspace
 
-- `workflows/*.md` — one spec per workflow.
-- `NOTES.md` — raw notes on the user's world: the tools they use, the channels they process, and their own terminology for both. When it is empty or thin, interview them about their world before specifying anything. Sharpen fuzzy terms into canonical ones as they surface, and record them here.
+All workflow and notes files live under `DOCS/99_learning/workflows/` (personal-productivity content, non-default context). Register the directory in `DOCS/99_learning/INDEX.md` per the repo's 文档维护规则 when you first create it.
+
+  - `workflows/*.md` — one spec per workflow (lives at `DOCS/99_learning/workflows/*.md`).
+  - `DOCS/99_learning/workflows/NOTES.md` — raw notes on the user's world: the tools they use, the channels they process, and their own terminology for both. When it is empty or thin, interview them about their world before specifying anything. Sharpen fuzzy terms into canonical ones as they surface, and record them here.
