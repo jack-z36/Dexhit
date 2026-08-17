@@ -19,7 +19,5 @@ setup(
     description="Per-side human hand normalization and O10 retargeting node.",
     license="TODO",
     tests_require=["pytest"],
-    entry_points={
-        "console_scripts": ["hand_retargeting_node = hand_retargeting.node:main"],
-    },
+    scripts=["scripts/hand_retargeting_node"],
 )

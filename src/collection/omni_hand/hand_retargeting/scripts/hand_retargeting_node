@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -eu
+
+if [[ -z "${DEXHIT_COLLECTION_PREFIX:-}" ]]; then
+  echo "BLOCKED_ENV: set DEXHIT_COLLECTION_PREFIX to the Python 3.12 Miniforge environment" >&2
+  exit 2
+fi
+if [[ -z "${OMNIHAND_O10_MODEL_FIXTURE:-}" ]]; then
+  echo "BLOCKED_ENV: set OMNIHAND_O10_MODEL_FIXTURE to the external O10 fixture" >&2
+  exit 2
+fi
+
+runtime_python=/usr/bin/python3.12
+runtime_site="$DEXHIT_COLLECTION_PREFIX/lib/python3.12/site-packages"
+runtime_lib="$DEXHIT_COLLECTION_PREFIX/lib"
+
+if [[ ! -d "$runtime_site" ]]; then
+  echo "BLOCKED_ENV: missing Python 3.12 site-packages: $runtime_site" >&2
+  exit 2
+fi
+if [[ ! -d "$runtime_lib" ]]; then
+  echo "BLOCKED_ENV: missing runtime libraries: $runtime_lib" >&2
+  exit 2
+fi
+if [[ ! -f "$OMNIHAND_O10_MODEL_FIXTURE/provenance.json" ]]; then
+  echo "BLOCKED_ENV: fixture must contain provenance.json: $OMNIHAND_O10_MODEL_FIXTURE" >&2
+  exit 2
+fi
+
+export PYTHONNOUSERSITE=1
+export PYTHONPATH="$runtime_site${PYTHONPATH:+:$PYTHONPATH}"
+export LD_LIBRARY_PATH="$runtime_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+if ! "$runtime_python" -c 'import pinocchio, nlopt' >/dev/null 2>&1; then
+  echo "BLOCKED_ENV: /usr/bin/python3.12 cannot import pinocchio and nlopt from DEXHIT_COLLECTION_PREFIX" >&2
+  exit 2
+fi
+
+exec "$runtime_python" -m hand_retargeting.node "$@"

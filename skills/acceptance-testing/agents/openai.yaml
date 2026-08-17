@@ -1,0 +1,5 @@
+interface:
+  display_name: "Acceptance Testing"
+  short_description: "AI 验收测试：运行真实程序、采集证据、分析差异、修复并复验"
+policy:
+  allow_implicit_invocation: false

@@ -106,7 +106,7 @@ def validate_candidate(
     return CandidateEvidence(
         candidate,
         residual,
-        residual <= residual_threshold and np.isfinite(residual),
+        bool(residual <= residual_threshold and np.isfinite(residual)),
         solver_usable,
         solver_result_code,
         evaluations,

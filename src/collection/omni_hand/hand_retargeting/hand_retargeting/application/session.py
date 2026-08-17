@@ -292,7 +292,7 @@ class RetargetingSession:
                 else self._has_valid[index] or evidence.valid
             )
             used_previous.append(previous is not None and not evidence.valid)
-            residual_available.append(np.isfinite(evidence.residual))
+            residual_available.append(bool(np.isfinite(evidence.residual)))
             residuals.append(evidence.residual)
             result_codes.append(evidence.solver_result_code)
             evaluations.append(evidence.evaluations)

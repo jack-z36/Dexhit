@@ -1,0 +1,34 @@
+# acceptance-testing 四角色模型分配（唯一权威）
+#
+# 编排者（Main Agent）每次派发 Subagent 前必须读取本文件，把对应角色的
+# model 与 reasoning_effort 显式写入 spawn 参数（Codex spawn_agent /
+# ZCode Agent 工具的 model、reasoning_effort 字段），禁止省略或自行改值。
+#
+# 修改模型分配 = 编辑本文件，然后运行：
+#   python3 skills/acceptance-testing/scripts/acceptance_run.py check-models
+# 校验模型名与推理档位（对照 ~/.codex/opencodex-catalog.json）以及
+# agents/codex-roles/*.md frontmatter 的一致性。
+#
+# 模型名必须存在于本机模型目录；跨 Provider 模型（zai/*、deepseek/*）
+# 默认不启用，启用前需人工确认委派链路可靠。
+
+[experimenter]
+model = "gpt-5.6-luna"
+reasoning_effort = "medium"
+
+[analyst]
+model = "gpt-5.6-sol"
+reasoning_effort = "high"
+
+[solution_planner]
+model = "gpt-5.6-sol"
+reasoning_effort = "high"
+
+[executor]
+model = "gpt-5.6-luna"
+reasoning_effort = "medium"
+
+# 兜底：模型不在目录、不支持或派发失败时使用，并记录到 run manifest。
+[fallback]
+model = "gpt-5.6-luna"
+reasoning_effort = "high"

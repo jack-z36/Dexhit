@@ -46,15 +46,23 @@ class NloptSlsqpOptimizer:
         optimizer.set_maxeval(self.max_evaluations)
         optimizer.set_maxtime(self.max_time_sec)
         evaluations = 0
+        last_candidate = None
+        callback_failed = False
 
         def objective(values, gradient):
-            nonlocal evaluations
+            nonlocal callback_failed, evaluations, last_candidate
             evaluations += 1
-            loss, analytic, _ = objective_and_gradient(
-                values, problem, self.coupling, self.kinematics
-            )
-            gradient[:] = analytic
-            return loss
+            last_candidate = np.asarray(values, dtype=np.float64).copy()
+            try:
+                loss, analytic, _ = objective_and_gradient(
+                    values, problem, self.coupling, self.kinematics
+                )
+                if gradient.size:
+                    gradient[:] = analytic
+                return loss
+            except Exception:
+                callback_failed = True
+                raise
 
         optimizer.set_min_objective(objective)
         started = time.perf_counter()
@@ -66,9 +74,18 @@ class NloptSlsqpOptimizer:
             result_code = int(optimizer.last_optimize_result())
             usable = bool(np.all(np.isfinite(candidate)))
         except Exception:
-            candidate = None
-            result_code = -1
-            usable = False
+            try:
+                result_code = int(optimizer.last_optimize_result())
+            except Exception:
+                result_code = -1
+            roundoff_limited = getattr(self._nlopt, "ROUNDOFF_LIMITED", None)
+            keep_candidate = (
+                not callback_failed
+                and roundoff_limited is not None
+                and result_code == roundoff_limited
+            )
+            candidate = last_candidate if keep_candidate else None
+            usable = keep_candidate and bool(np.all(np.isfinite(candidate)))
         return SolverResult(
             candidate, result_code, evaluations, time.perf_counter() - started, usable
         )

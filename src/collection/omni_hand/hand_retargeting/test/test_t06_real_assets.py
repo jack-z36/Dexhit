@@ -12,12 +12,19 @@ from __future__ import annotations
 import importlib.util
 import os
 
+from hand_retargeting.adapters.model_geometry import load_robot_geometry
+from hand_retargeting.adapters.nlopt import NloptSlsqpOptimizer
 from hand_retargeting.adapters.pinocchio import PinocchioFingerKinematics
-from hand_retargeting.application.session import FINGER_ACTIVE_INDICES, FINGER_TIP_BASES
+from hand_retargeting.application.session import (
+    FINGER_ACTIVE_INDICES,
+    FINGER_TIP_BASES,
+    RetargetingSession,
+)
+from hand_retargeting.contracts import RawHandFrameValue, RetargetingConfig
 from hand_retargeting.core.coupling import CouplingModel
-from hand_retargeting.core.ik import FingerProblem, objective_and_gradient
+from hand_retargeting.core.ik import FingerProblem, objective_and_gradient, validate_candidate
 import numpy as np
-from omnihand_o10_contracts import JOINT_LIMITS
+from omnihand_o10_contracts import JOINT_LIMITS, Side
 from omnihand_o10_model import load_model
 from omnihand_o10_model.contract import tip_link
 import pytest
@@ -113,3 +120,92 @@ def test_real_objective_gradient_matches_central_difference_for_all_fingers(side
             minus[index] -= epsilon
             numeric[index] = (loss(plus) - loss(minus)) / (2.0 * epsilon)
         np.testing.assert_allclose(analytic, numeric, rtol=3e-5, atol=3e-7)
+
+
+def test_real_reachable_thumb_roundoff_keeps_candidate_for_validation():
+    """A real optimum may stop with NLopt roundoff; validity remains separate."""
+    side = "right"
+    assets = load_model()[side]
+    geometry = load_robot_geometry(side)
+    kinematics = PinocchioFingerKinematics.from_urdf(assets.urdf_path, side)
+    coupling = CouplingModel.from_mjcf(assets.coupling_model)
+    limits = JOINT_LIMITS[side]
+    active_indices = FINGER_ACTIVE_INDICES[0]
+    lower = np.asarray([limits.lower[index] for index in active_indices])
+    upper = np.asarray([limits.upper[index] for index in active_indices])
+    reachable_active = np.zeros(10, dtype=np.float64)
+    reachable_active[list(active_indices)] = lower + 0.2 * (upper - lower)
+    frame = tip_link(side, FINGER_TIP_BASES[0])
+    target = kinematics.tip_position_and_jacobian(
+        coupling.evaluate(reachable_active), frame
+    )[0]
+    problem = FingerProblem(
+        active_indices=active_indices,
+        tip_frame=frame,
+        robot_length=geometry.finger_chain_lengths[0],
+        target=target,
+        lower=lower,
+        upper=upper,
+    )
+    optimizer = NloptSlsqpOptimizer(coupling, kinematics, 250, 0.25)
+    result = optimizer.solve(problem, (lower + upper) / 2.0)
+    evidence = validate_candidate(
+        result.candidate,
+        problem,
+        coupling,
+        kinematics,
+        result.solver_usable,
+        result.result_code,
+        result.evaluations,
+        0.05,
+    )
+
+    assert result.candidate is not None
+    assert result.solver_usable is True
+    assert evidence.valid is True
+    assert evidence.residual == pytest.approx(0.0, abs=1e-7)
+
+
+def test_real_unreachable_thumb_keeps_combined_command_suppressed():
+    """The original field-like target remains explicitly invalid and held."""
+    side = "right"
+    assets = load_model()[side]
+    geometry = load_robot_geometry(side)
+    kinematics = PinocchioFingerKinematics.from_urdf(assets.urdf_path, side)
+    coupling = CouplingModel.from_mjcf(assets.coupling_model)
+    config = RetargetingConfig(
+        1e-6, 1e-6, 1e-6, 3, 2,
+        (0.01,) * 5, (0.10,) * 5, (0.05,) * 5,
+        250, 0.25, (0.1,) * 10, 0.5, 2, 0.1,
+    )
+    suffixes = (
+        "Hand", "ThumbProximal", "ThumbMedial", "ThumbDistal", "ThumbTip",
+        "IndexProximal", "IndexMedial", "IndexDistal", "IndexTip",
+        "MiddleProximal", "MiddleMedial", "MiddleDistal", "MiddleTip",
+        "RingProximal", "RingMedial", "RingDistal", "RingTip",
+        "LittleProximal", "LittleMedial", "LittleDistal", "LittleTip",
+    )
+    positions = [(0.0, 0.0, 0.0)]
+    for x in (0.8, 0.6, 0.2, -0.2, -0.6):
+        positions.extend(
+            [(x, 1.0, 0.0), (x, 1.4, 0.0), (x, 1.8, 0.0), (x, 2.2, 0.0)]
+        )
+    frame = RawHandFrameValue(
+        tuple("right" + suffix for suffix in suffixes),
+        tuple(positions),
+        1,
+    )
+    session = RetargetingSession(
+        Side.RIGHT, config, geometry, coupling=coupling,
+        kinematics=kinematics,
+        optimizer=NloptSlsqpOptimizer(coupling, kinematics, 250, 0.25),
+    )
+    for stamp in range(1, 6):
+        decision = session.process(
+            RawHandFrameValue(frame.node_names, frame.positions, stamp)
+        )
+
+    assert decision.ik_state[0] == "residual-exceeded"
+    assert decision.has_valid_ik[0] is False
+    assert all(decision.has_valid_ik[index] for index in range(1, 5))
+    assert decision.command_published is False

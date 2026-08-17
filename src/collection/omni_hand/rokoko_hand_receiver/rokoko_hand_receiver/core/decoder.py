@@ -1,9 +1,17 @@
-"""Strict, framework-free decoder for the confirmed Rokoko JSON v3 fields."""
+"""
+Strict decoder for the confirmed Rokoko JSON v3 fields.
+
+Rokoko Studio streams JSON v3 over UDP; the datagram is LZ4-frame-compressed
+(magic ``04 22 4d 18``) when compression is enabled and plain JSON otherwise.
+Both forms are accepted here.
+"""
 
 from dataclasses import dataclass
 import json
 import math
 from typing import Literal, TypeAlias
+
+import lz4.frame
 
 
 Side: TypeAlias = Literal["left", "right"]
@@ -34,6 +42,8 @@ _SEMANTIC_NODE_SUFFIXES = (
     "LittleTip",
 )
 
+_LZ4_FRAME_MAGIC = b"\x04\x22\x4d\x18"
+
 
 class _Pairs(list[tuple[str, object]]):
     """JSON object representation that retains duplicate member names."""
@@ -63,6 +73,33 @@ class DecodeResult:
 
 def _reject_scene(reason: str) -> DecodeResult:
     return DecodeResult({}, {}, reason)
+
+
+def _decompress(payload: bytes) -> bytes:
+    """Decompress an LZ4-framed payload; pass plain JSON through unchanged."""
+    if not payload.startswith(_LZ4_FRAME_MAGIC):
+        return payload
+    try:
+        return lz4.frame.decompress(payload)
+    except RuntimeError as exc:
+        raise ValueError(f"LZ4 decompression failed: {exc}") from exc
+
+
+def _is_v3_version(value: object) -> bool:
+    """
+    Return True when value denotes Rokoko JSON v3.
+
+    Rokoko emits the version as the string ``"3,0"``; the numeric ``3`` and
+    the ``"3"``/``"3.0"`` spellings are also accepted as equivalent v3 marks.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value == 3
+    if isinstance(value, str):
+        major = value.strip().replace(",", ".").split(".")[0]
+        return major == "3"
+    return False
 
 
 def _object(value: object, field: str) -> dict[str, object]:
@@ -150,11 +187,12 @@ def decode_scene(
 ) -> DecodeResult:
     """Decode one datagram into independent, canonical left/right frames."""
     try:
+        payload = _decompress(payload)
         root = json.loads(payload, object_pairs_hook=_Pairs)
         root_obj = _object(root, "root")
         version = root_obj.get("version")
-        if isinstance(version, bool) or version != 3:
-            raise ValueError("version must equal 3")
+        if not _is_v3_version(version):
+            raise ValueError("version must be JSON v3")
         scene = _object(root_obj.get("scene"), "scene")
         source_timestamp = _finite_number(scene.get("timestamp"), "scene.timestamp")
         actors = scene.get("actors")

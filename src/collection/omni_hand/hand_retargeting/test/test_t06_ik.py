@@ -193,6 +193,122 @@ def test_t06_side_aggregates_do_not_share_ik_or_filter_history():
     assert left._filter.last_stamp_ns == 5
 
 
+def test_real_backend_decision_uses_python_bools_for_ros_boolean_arrays():
+    session = RetargetingSession(
+        Side.RIGHT, _config(), _geometry(), coupling=CouplingModel.from_contract("right"),
+        kinematics=_Kinematics(), optimizer=_Optimizer(),
+    )
+    for stamp in (1, 2, 3, 4, 5):
+        decision = session.process(_frame(stamp))
+
+    for values in (
+        decision.length_frozen,
+        decision.length_current_valid,
+        decision.has_valid_ik,
+        decision.used_previous_valid_target,
+        decision.residual_available,
+    ):
+        assert all(type(value) is bool for value in values)
+
+
+def test_nlopt_adapter_accepts_objective_only_callback_without_gradient_buffer():
+    class _EmptyGradientOptimizer:
+        def set_lower_bounds(self, _values):
+            pass
+
+        def set_upper_bounds(self, _values):
+            pass
+
+        def set_maxeval(self, _value):
+            pass
+
+        def set_maxtime(self, _value):
+            pass
+
+        def set_min_objective(self, objective):
+            self._objective = objective
+
+        def optimize(self, initial):
+            self._objective(initial, np.empty(0, dtype=np.float64))
+            return initial
+
+        def last_optimize_result(self):
+            return 5
+
+    class _EmptyGradientNlopt:
+        LD_SLSQP = object()
+
+        @staticmethod
+        def opt(_algorithm, _dimension):
+            return _EmptyGradientOptimizer()
+
+    from hand_retargeting.adapters.nlopt import NloptSlsqpOptimizer
+
+    optimizer = NloptSlsqpOptimizer(
+        CouplingModel.from_contract("right"), _Kinematics(), 10, 0.1
+    )
+    optimizer._nlopt = _EmptyGradientNlopt
+    problem = FingerProblem(
+        (0, 1, 2), "R_thumb_tip", 2.0,
+        np.array([0.1, 0.2, 0.3]),
+        np.array([-1.0, -1.0, -1.0]), np.array([1.0, 1.0, 1.0]),
+    )
+    result = optimizer.solve(problem, np.zeros(3))
+
+    assert result.solver_usable is True
+    assert result.candidate is not None
+
+
+def test_nlopt_adapter_discards_candidate_after_unexpected_optimizer_error():
+    class _UnexpectedErrorOptimizer:
+        def set_lower_bounds(self, _values):
+            pass
+
+        def set_upper_bounds(self, _values):
+            pass
+
+        def set_maxeval(self, _value):
+            pass
+
+        def set_maxtime(self, _value):
+            pass
+
+        def set_min_objective(self, objective):
+            self._objective = objective
+
+        def optimize(self, initial):
+            self._objective(initial, np.empty(0, dtype=np.float64))
+            raise RuntimeError("unexpected optimizer failure")
+
+        def last_optimize_result(self):
+            return 5
+
+    class _UnexpectedErrorNlopt:
+        LD_SLSQP = object()
+        ROUNDOFF_LIMITED = -4
+
+        @staticmethod
+        def opt(_algorithm, _dimension):
+            return _UnexpectedErrorOptimizer()
+
+    from hand_retargeting.adapters.nlopt import NloptSlsqpOptimizer
+
+    optimizer = NloptSlsqpOptimizer(
+        CouplingModel.from_contract("right"), _Kinematics(), 10, 0.1
+    )
+    optimizer._nlopt = _UnexpectedErrorNlopt
+    problem = FingerProblem(
+        (0, 1, 2), "R_thumb_tip", 2.0,
+        np.array([0.1, 0.2, 0.3]),
+        np.array([-1.0, -1.0, -1.0]), np.array([1.0, 1.0, 1.0]),
+    )
+    result = optimizer.solve(problem, np.zeros(3))
+
+    assert result.candidate is None
+    assert result.solver_usable is False
+    assert result.result_code == 5
+
+
 def test_real_backend_adapters_report_blocked_env_without_faking_success():
     from hand_retargeting.adapters.nlopt import NloptSlsqpOptimizer
     from hand_retargeting.adapters.pinocchio import PinocchioFingerKinematics

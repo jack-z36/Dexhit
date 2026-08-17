@@ -232,3 +232,29 @@ def test_loopback_scene_error_publishes_neither_side_and_receiver_survives(
         executor, lambda: len(left_messages) == 1 and len(right_messages) == 1
     )
     assert subscriptions
+
+
+def test_loopback_lz4_compressed_fixture_publishes_both_sides(ros_graph):
+    import lz4.frame
+
+    port, _, observer, executor = ros_graph
+    left_messages = []
+    right_messages = []
+    subscriptions = [
+        observer.create_subscription(
+            RawHandFrame, "/rokoko/left/raw_hand", left_messages.append, 10
+        ),
+        observer.create_subscription(
+            RawHandFrame, "/rokoko/right/raw_hand", right_messages.append, 10
+        ),
+    ]
+
+    _send(port, lz4.frame.compress(FIXTURE.read_bytes()))
+
+    assert _spin_until(
+        executor, lambda: len(left_messages) == 1 and len(right_messages) == 1
+    )
+    assert left_messages[0].node_names[0] == "leftHand"
+    assert left_messages[0].positions[6].x == 6.0
+    assert right_messages[0].node_names[-1] == "rightLittleTip"
+    assert subscriptions
