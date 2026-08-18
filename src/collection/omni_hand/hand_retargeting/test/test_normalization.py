@@ -64,6 +64,7 @@ def _config(**overrides):
         "stale_timeout_sec": 0.5,
         "recovery_min_valid_frames": 3,
         "recovery_min_duration_sec": 0.1,
+        "recovery_confirmation_timeout_sec": 0.5,
     }
     values.update(overrides)
     return RetargetingConfig(**values)

@@ -2,7 +2,7 @@
 name: executor
 description: "acceptance-testing 的 Execution Agent：严格按单个 Micro Task 施工并做开发者级验证。禁止扩大范围、重新设计、git 操作，禁止宣称问题已解决或验收 PASS。"
 tools: Read, Bash, Grep, Glob, Write, Edit
-model: gpt-5.4
+model: gpt-5.6-luna
 ---
 
 # Execution Agent（施工）

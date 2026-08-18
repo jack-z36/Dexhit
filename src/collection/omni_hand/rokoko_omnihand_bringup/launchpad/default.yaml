@@ -1,0 +1,36 @@
+# Launchpad's auditable, verified-session baseline.  This file selects commands
+# and safety parameters; it does not arm hardware or claim hardware readiness.
+name: default
+commands:
+  rokoko_receiver: [ros2, run, rokoko_hand_receiver, rokoko_hand_receiver_node]
+  hand_retargeting: [bash]
+  hcan_provider: [ros2, run, omnihand_o10_hardware_adapter, omnihand_o10_hardware_provider]
+  omnihand_o10_control: [ros2, run, omnihand_o10_control, o10_control_node]
+retargeting_params: "${DEXHIT_RETARGET_PARAMS:-runs/retargeting_diag_params.yaml}"
+parameters:
+  rokoko_receiver:
+    bind_address: 0.0.0.0
+  hcan_provider:
+    o10.left.transport: hcan
+    o10.left.hand_device_id: 1
+    o10.left.canfd_device_id: 0
+    o10.left.canfd_channel_id: 0
+    o10.right.transport: hcan
+    o10.right.hand_device_id: 1
+    o10.right.canfd_device_id: 0
+    o10.right.canfd_channel_id: 1
+  omnihand_o10_control:
+    left.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    right.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    left.max_time_credit: 0.1
+    right.max_time_credit: 0.1
+    left.target_input_stale_timeout: 2.0
+    right.target_input_stale_timeout: 2.0
+    left.target_receive_stale_timeout: 2.0
+    right.target_receive_stale_timeout: 2.0
+    left.control_check_period: 0.05
+    right.control_check_period: 0.05
+    left.provider_heartbeat_timeout: 3.0
+    right.provider_heartbeat_timeout: 3.0
+    left.read_service_timeout: 1.0
+    right.read_service_timeout: 1.0

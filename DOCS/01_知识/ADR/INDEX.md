@@ -12,3 +12,5 @@
 - [O10 控制使用事件—效果边界接入可替换硬件 Provider](0008-o10-control-event-effect-hardware-port.md)：控制 Application 只处理纯事件和效果；生产厂商 Provider 与无真机纯软件 Provider 实现同一 O10HardwarePort wire contract。
 - [Phase 1 自有运行包固定使用 Python 3](0009-phase1-owned-runtime-python.md)：自有运行代码统一使用 Python/ament_python，使框架边界和依赖门禁具有单一可执行语言范围；跨语言迁移必须先升级门禁。
 - [O10 无动作主动关节读取使用逐侧 Service](0010-o10-fresh-active-joint-read-service.md)：生产与纯软件 Provider 通过同一逐侧 Service 在请求后执行无动作新读取，控制端拥有超时与复核。
+- [Launchpad 真机与 system_test 编排边界](0011-launchpad-real-hardware-test-boundary.md)：真机模式禁止编排配置引用 `system_test`；mock 模式允许复用纯软件 Provider 与场景生成器。
+- [Launchpad 作为设备编排层](0012-launchpad-device-orchestration-layer.md)：Launchpad 位于控制面最外层，按模式选择业务包和替身 Provider，业务包不得反向依赖 Launchpad。

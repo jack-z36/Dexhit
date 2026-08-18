@@ -19,6 +19,7 @@ from ..contracts import (
 )
 from ..core.coupling import CouplingModel
 from ..core.ik import CandidateEvidence, FingerProblem, validate_candidate
+from ..core.projection import build_projection_witness
 from ..core.normalization import (
     build_palm_frame,
     finger_chain_length,
@@ -97,7 +98,8 @@ class RetargetingSession:
         self._filter = LowPassFilter(config.smooth_time_constants)
         self._stale = False
         self._recovery_frames = 0
-        self._recovery_start_ns = None
+        self._recovery_attempt_start_ns = None
+        self._valid_streak_start_ns = None
         self._recovery_candidates = None
         self._last_input_at_ns: int | None = None
         self._estimators = tuple(
@@ -170,7 +172,8 @@ class RetargetingSession:
         """Freeze output and time history until a caller supplies recovery frames."""
         self._stale = True
         self._recovery_frames = 0
-        self._recovery_start_ns = None
+        self._recovery_attempt_start_ns = None
+        self._valid_streak_start_ns = None
         self._recovery_candidates = None
         return self._decision(
             self._filter.last_stamp_ns or 0,
@@ -195,18 +198,21 @@ class RetargetingSession:
         )
         current_valid = all(value is not None for value in targets or ())
         candidates_valid = all(decision.has_valid_ik)
+        if self._recovery_attempt_start_ns is None:
+            self._recovery_attempt_start_ns = frame.received_at_ns
         if current_valid and candidates_valid:
-            if self._recovery_frames == 0:
-                self._recovery_start_ns = frame.received_at_ns
+            if self._valid_streak_start_ns is None:
+                self._valid_streak_start_ns = frame.received_at_ns
             self._recovery_frames += 1
-            duration = (frame.received_at_ns - self._recovery_start_ns) / 1e9
+            duration = (frame.received_at_ns - self._valid_streak_start_ns) / 1e9
             if (
                 self._recovery_frames >= self.config.recovery_min_valid_frames
                 and duration >= self.config.recovery_min_duration_sec
             ):
                 self._stale = False
                 self._recovery_frames = 0
-                self._recovery_start_ns = None
+                self._recovery_attempt_start_ns = None
+                self._valid_streak_start_ns = None
                 self._filter.reset_time(frame.received_at_ns)
                 return self._solve_and_publish(
                     frame.received_at_ns, current_lengths, targets,
@@ -214,8 +220,37 @@ class RetargetingSession:
                 )
         else:
             self._recovery_frames = 0
-            self._recovery_start_ns = None
+            self._valid_streak_start_ns = None
             duration = 0.0
+        if (
+            frame.received_at_ns - self._recovery_attempt_start_ns
+            > self.config.recovery_confirmation_timeout_sec * 1e9
+        ):
+            self._recovery_frames = 0
+            self._valid_streak_start_ns = None
+            self._recovery_attempt_start_ns = None
+            return self._decision(
+                frame.received_at_ns, side_valid=False,
+                current_lengths=current_lengths, targets=None, stale=True,
+                solve_executed=decision.solve_executed,
+                ik_state=decision.ik_state,
+                has_valid_ik=decision.has_valid_ik,
+                used_previous_valid_target=decision.used_previous_valid_target,
+                residual_available=decision.residual_available,
+                normalized_residual=decision.normalized_residual,
+                solver_result_code=decision.solver_result_code,
+                solver_evaluations=decision.solver_evaluations,
+                target_projection_applied=decision.target_projection_applied,
+                target_projection_distance_available=(
+                    decision.target_projection_distance_available
+                ),
+                normalized_target_projection_distance=(
+                    decision.normalized_target_projection_distance
+                ),
+                solve_duration_sec=decision.solve_duration_sec,
+                recovery_valid_count=0,
+                recovery_valid_duration_sec=0.0,
+            )
         return self._decision(
             frame.received_at_ns, side_valid=False, current_lengths=current_lengths,
             targets=None, stale=True,
@@ -227,6 +262,13 @@ class RetargetingSession:
             normalized_residual=decision.normalized_residual,
             solver_result_code=decision.solver_result_code,
             solver_evaluations=decision.solver_evaluations,
+            target_projection_applied=decision.target_projection_applied,
+            target_projection_distance_available=(
+                decision.target_projection_distance_available
+            ),
+            normalized_target_projection_distance=(
+                decision.normalized_target_projection_distance
+            ),
             solve_duration_sec=decision.solve_duration_sec,
             phase_override="recovery-confirming",
             recovery_valid_count=self._recovery_frames,
@@ -239,8 +281,10 @@ class RetargetingSession:
     ):
         started = self._clock()
         states, has_valid, used_previous, residual_available = [], [], [], []
+        projection_applied, projection_available, projection_distances = [], [], []
         residuals, result_codes, evaluations = [], [], []
         committed = [None] * 5
+        effective_targets = list(targets or (None,) * 5)
         for index, (target, active_indices) in enumerate(
             zip(targets or (None,) * 5, FINGER_ACTIVE_INDICES)
         ):
@@ -253,6 +297,9 @@ class RetargetingSession:
                 residuals.append(float("nan"))
                 result_codes.append(None)
                 evaluations.append(0)
+                projection_applied.append(False)
+                projection_available.append(False)
+                projection_distances.append(float("nan"))
                 committed[index] = previous
                 continue
             limits = JOINT_LIMITS[self.side]
@@ -272,13 +319,53 @@ class RetargetingSession:
                 initial = np.asarray(previous, dtype=np.float64)
             try:
                 result = self.optimizer.solve(problem, initial)
-                evidence = validate_candidate(
+                raw_evidence = validate_candidate(
                     result.candidate, problem, self.coupling, self.kinematics,
                     result.solver_usable, result.result_code, result.evaluations,
                     self.config.ik_residual_thresholds[index],
                 )
+                evidence = raw_evidence
+                applied = False
+                witness = None
+                if raw_evidence.valid:
+                    projection_available.append(True)
+                    projection_distances.append(0.0)
+                else:
+                    witness = build_projection_witness(
+                        problem, raw_evidence.active, self.coupling, self.kinematics
+                    )
+                    projection_available.append(witness.available)
+                    projection_distances.append(
+                        witness.distance if witness.available else float("nan")
+                    )
+                    if witness.available:
+                        projected_problem = FingerProblem(
+                            active_indices=problem.active_indices,
+                            tip_frame=problem.tip_frame,
+                            robot_length=problem.robot_length,
+                            target=witness.target,
+                            lower=problem.lower,
+                            upper=problem.upper,
+                        )
+                        projected_evidence = validate_candidate(
+                            witness.active, projected_problem, self.coupling,
+                            self.kinematics, raw_evidence.solver_usable,
+                            raw_evidence.solver_result_code,
+                            raw_evidence.evaluations,
+                            self.config.ik_residual_thresholds[index],
+                        )
+                        if projected_evidence.valid:
+                            evidence = projected_evidence
+                            applied = True
+                            effective_targets[index] = tuple(
+                                float(value) for value in witness.target
+                            )
+                projection_applied.append(applied)
             except Exception:
                 evidence = CandidateEvidence(None, float("nan"), False, False, -1, 0)
+                projection_applied.append(False)
+                projection_available.append(False)
+                projection_distances.append(float("nan"))
             states.append(
                 "valid"
                 if evidence.valid
@@ -312,7 +399,8 @@ class RetargetingSession:
                 command = self._filter.update(combined, stamp_ns)
                 command_published = command is not None
         return self._decision(
-            stamp_ns, side_valid=side_valid, current_lengths=current_lengths, targets=targets,
+            stamp_ns, side_valid=side_valid, current_lengths=current_lengths,
+            targets=tuple(effective_targets),
             command_published=command_published,
             command_positions=(
                 None if command is None else tuple(float(v) for v in command)
@@ -323,6 +411,9 @@ class RetargetingSession:
             residual_available=tuple(residual_available),
             normalized_residual=tuple(residuals), solver_result_code=tuple(result_codes),
             solver_evaluations=tuple(evaluations),
+            target_projection_applied=tuple(projection_applied),
+            target_projection_distance_available=tuple(projection_available),
+            normalized_target_projection_distance=tuple(projection_distances),
             stale=self._stale if not recovery_resume else False,
             recovery_valid_count=self._recovery_frames,
             recovery_valid_duration_sec=0.0,
@@ -351,6 +442,9 @@ class RetargetingSession:
         normalized_residual=None,
         solver_result_code=None,
         solver_evaluations=None,
+        target_projection_applied=None,
+        target_projection_distance_available=None,
+        normalized_target_projection_distance=None,
         recovery_valid_count=0,
         recovery_valid_duration_sec=0.0,
         phase_override=None,
@@ -397,6 +491,13 @@ class RetargetingSession:
             normalized_residual=tuple(normalized_residual or (float("nan"),) * 5),
             solver_result_code=tuple(solver_result_code or (None,) * 5),
             solver_evaluations=tuple(solver_evaluations or (0,) * 5),
+            target_projection_applied=tuple(target_projection_applied or (False,) * 5),
+            target_projection_distance_available=tuple(
+                target_projection_distance_available or (False,) * 5
+            ),
+            normalized_target_projection_distance=tuple(
+                normalized_target_projection_distance or (float("nan"),) * 5
+            ),
             solve_executed=solve_executed,
             command_stamp_ns=input_stamp_ns if command_published else None,
             command_positions=command_positions,

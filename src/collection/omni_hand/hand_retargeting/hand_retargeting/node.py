@@ -166,6 +166,9 @@ class HandRetargetingNode(Node):
             "stale_timeout_sec": "raw receive timeout before stale",
             "recovery_min_valid_frames": "minimum continuous full-side recovery frames",
             "recovery_min_duration_sec": "minimum recovery observation span in seconds",
+            "recovery_confirmation_timeout_sec": (
+                "maximum receive-time recovery confirmation window in seconds"
+            ),
         }
         values = {}
         missing = []
@@ -220,6 +223,13 @@ class HandRetargetingNode(Node):
             used_previous_valid_target=decision.used_previous_valid_target,
             residual_available=decision.residual_available,
             normalized_residual=decision.normalized_residual,
+            target_projection_applied=decision.target_projection_applied,
+            target_projection_distance_available=(
+                decision.target_projection_distance_available
+            ),
+            normalized_target_projection_distance=(
+                decision.normalized_target_projection_distance
+            ),
             solver_result_code=decision.solver_result_code,
             solver_evaluations=decision.solver_evaluations,
             solve_executed=decision.solve_executed,
@@ -299,6 +309,13 @@ class HandRetargetingNode(Node):
         state.used_previous_valid_target = list(decision.used_previous_valid_target)
         state.residual_available = list(decision.residual_available)
         state.normalized_residual = list(decision.normalized_residual)
+        state.target_projection_applied = list(decision.target_projection_applied)
+        state.target_projection_distance_available = list(
+            decision.target_projection_distance_available
+        )
+        state.normalized_target_projection_distance = list(
+            decision.normalized_target_projection_distance
+        )
         state.solver_result_code = [
             _SOLVER_NOT_RUN if value is None else value
             for value in decision.solver_result_code

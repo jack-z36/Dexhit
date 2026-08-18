@@ -15,6 +15,10 @@ import xml.etree.ElementTree as ET
 
 
 OMNI_HAND = Path(__file__).resolve().parents[2]
+COLLECTION = OMNI_HAND.parent
+PACKAGE_ROOTS = {
+    "rokoko_omnihand_launchpad": COLLECTION / "rokoko_omnihand_launchpad",
+}
 MANAGED = {
     "rokoko_omnihand_msgs",
     "omnihand_o10_contracts",
@@ -26,6 +30,7 @@ MANAGED = {
     "rokoko_omnihand_bringup",
     "rokoko_omnihand_system_test",
     "rokoko_omnihand_architecture_test",
+    "rokoko_omnihand_launchpad",
 }
 PRODUCTION = MANAGED - {
     "rokoko_omnihand_system_test",
@@ -39,11 +44,25 @@ RUNTIME_PYTHON = {
     "rokoko_omnihand_bringup",
     "rokoko_omnihand_system_test",
     "rokoko_omnihand_architecture_test",
+    "rokoko_omnihand_launchpad",
 }
+
+# Launchpad is a production package at the dependency-graph level, but these
+# two explicitly named adapters are the only allowed mock/sim seams.  Keep
+# the exception narrow: a new Launchpad module must opt into this list rather
+# than inheriting permission to load the software Provider.
+LAUNCHPAD_MOCK_ADAPTERS = frozenset({
+    "synthetic_input.py",
+    "sim_provider.py",
+})
+
+
+def _package_root(package: str) -> Path:
+    return PACKAGE_ROOTS.get(package, OMNI_HAND / package)
 
 
 def _manifest(package: str) -> ET.Element:
-    return ET.parse(OMNI_HAND / package / "package.xml").getroot()
+    return ET.parse(_package_root(package) / "package.xml").getroot()
 
 
 def _deps(package: str, include_tests: bool = False) -> set[str]:
@@ -59,7 +78,7 @@ def _deps(package: str, include_tests: bool = False) -> set[str]:
 
 
 def _python_files(package: str, *, include_tests: bool = False) -> list[Path]:
-    root = OMNI_HAND / package
+    root = _package_root(package)
     files = []
     for path in root.rglob("*.py"):
         if "__pycache__" in path.parts:
@@ -70,6 +89,13 @@ def _python_files(package: str, *, include_tests: bool = False) -> list[Path]:
             continue
         files.append(path)
     return files
+
+
+def _is_launchpad_mock_adapter(path: Path) -> bool:
+    return (
+        path.parent.name == "rokoko_omnihand_launchpad"
+        and path.name in LAUNCHPAD_MOCK_ADAPTERS
+    )
 
 
 def _imports(path: Path) -> list[tuple[str, int]]:
@@ -125,6 +151,7 @@ def test_A01_package_dependency_graph_is_acyclic_and_allowed():
             "rokoko_omnihand_msgs", "omnihand_o10_contracts", "omnihand_o10_model",
         },
         "rokoko_omnihand_architecture_test": set(),
+        "rokoko_omnihand_launchpad": set(),
     }
     violations = []
     graph = {}
@@ -224,8 +251,14 @@ def test_A08_production_excludes_test_provider():
         if "rokoko_omnihand_system_test" in _deps(package, include_tests=True):
             violations.append(f"manifest {package} -> rokoko_omnihand_system_test")
         for path in _python_files(package):
+            if package == "rokoko_omnihand_launchpad" and _is_launchpad_mock_adapter(path):
+                continue
             text = path.read_text(encoding="utf-8")
-            if "rokoko_omnihand_system_test" in text or "SoftwareO10Provider" in text:
+            imported = {
+                module.split(".", 1)[0]
+                for module, _line in _imports(path)
+            }
+            if "rokoko_omnihand_system_test" in imported or "SoftwareO10Provider" in text:
                 violations.append(str(path))
     assert not violations, "production includes test Provider: " + ", ".join(violations)
 
@@ -328,7 +361,7 @@ def test_A15_retarg_side_aggregates_are_isolated():
         ik_residual_thresholds=(0.1,) * 5, ik_max_evaluations=1,
         ik_max_time_sec=0.01, smooth_time_constants=(0.1,) * 10,
         stale_timeout_sec=1.0, recovery_min_valid_frames=1,
-        recovery_min_duration_sec=0.1,
+        recovery_min_duration_sec=0.1, recovery_confirmation_timeout_sec=0.5,
     )
     geometry = RobotHandGeometry(
         tuple((float(index), 0.0, 0.0) for index in range(5)),
@@ -429,3 +462,37 @@ def test_A22_owned_runtime_packages_use_ament_python():
         if build_types != ["ament_python"]:
             violations.append(f"{package}: {build_types}")
     assert not violations, "owned runtime language policy violation: " + ", ".join(violations)
+
+
+def test_A23_launchpad_skeleton_boundary():
+    root = _package_root("rokoko_omnihand_launchpad")
+    assert root == COLLECTION / "rokoko_omnihand_launchpad"
+    assert (root / "package.xml").is_file()
+    assert (root / "resource/rokoko_omnihand_launchpad").is_file()
+    assert (root / "web/package.json").is_file()
+    assert (root / "web/src/App.vue").is_file()
+
+    main = (root / "rokoko_omnihand_launchpad/main.py").read_text(encoding="utf-8")
+    app = (root / "rokoko_omnihand_launchpad/app.py").read_text(encoding="utf-8")
+    assert 'HOST = "127.0.0.1"' in main
+    assert "PORT = 8710" in main
+    assert "uvicorn.run" in main
+    assert "FastAPI" in app
+    assert "业务节点尚未接入" in app
+
+    assert not _deps("rokoko_omnihand_launchpad")
+    # The manifest must remain independent of all managed ROS/business
+    # packages.  Mock/sim adapters are the sole intentional source-level
+    # exception and are checked separately by A08.
+    production_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in _python_files("rokoko_omnihand_launchpad", include_tests=False)
+        if not _is_launchpad_mock_adapter(path)
+    )
+    assert "rokoko_omnihand_system_test" not in production_source
+
+    orchestrator = (root / "rokoko_omnihand_launchpad/orchestrator.py").read_text(
+        encoding="utf-8"
+    )
+    assert "execution_mode == \"real\"" in orchestrator
+    assert "_contains_system_test(profile_data)" in orchestrator

@@ -39,6 +39,7 @@ def _config_overrides():
         Parameter("stale_timeout_sec", value=0.5),
         Parameter("recovery_min_valid_frames", value=3),
         Parameter("recovery_min_duration_sec", value=0.1),
+        Parameter("recovery_confirmation_timeout_sec", value=0.5),
     ]
 
 
@@ -137,6 +138,9 @@ def test_public_state_topic_observes_collecting_to_waiting_without_command(ros_g
     assert list(waiting.ik_state) == [RetargetingState.IK_UNINITIALIZED] * 5
     assert list(waiting.residual_available) == [False] * 5
     assert all(math.isnan(value) for value in waiting.normalized_residual)
+    assert list(waiting.target_projection_applied) == [False] * 5
+    assert list(waiting.target_projection_distance_available) == [False] * 5
+    assert all(math.isnan(value) for value in waiting.normalized_target_projection_distance)
     assert list(waiting.solver_result_code) == list(RetargetingState().solver_result_code)
     assert list(waiting.solver_evaluations) == [0] * 5
 
@@ -179,6 +183,9 @@ def test_public_topic_reports_palm_degeneracy_without_running_ik(ros_graph):
     assert list(state.ik_state) == [RetargetingState.IK_NOT_RUN_LENGTH_COLLECTING] * 5
     assert state.solve_executed is False
     assert math.isnan(state.solve_duration_sec)
+    assert list(state.target_projection_applied) == [False] * 5
+    assert list(state.target_projection_distance_available) == [False] * 5
+    assert all(math.isnan(value) for value in state.normalized_target_projection_distance)
     assert state.input_stamp.sec == 0
     assert state.input_stamp.nanosec == 123
 
@@ -208,6 +215,12 @@ def test_public_topic_reports_model_error(monkeypatch):
         assert states[-1].input_stamp.nanosec == 123
         assert states[-1].solve_executed is False
         assert math.isnan(states[-1].solve_duration_sec)
+        assert list(states[-1].target_projection_applied) == [False] * 5
+        assert list(states[-1].target_projection_distance_available) == [False] * 5
+        assert all(
+            math.isnan(value)
+            for value in states[-1].normalized_target_projection_distance
+        )
         assert list(states[-1].solver_result_code) == list(
             RetargetingState().solver_result_code
         )
@@ -217,4 +230,17 @@ def test_public_topic_reports_model_error(monkeypatch):
         observer.destroy_node()
         retargeter.destroy_node()
         executor.shutdown()
+        rclpy.shutdown()
+
+
+def test_node_requires_recovery_confirmation_timeout_parameter():
+    rclpy.init()
+    try:
+        overrides = [
+            parameter for parameter in _config_overrides()
+            if parameter.name != "recovery_confirmation_timeout_sec"
+        ]
+        with pytest.raises(ValueError, match="recovery_confirmation_timeout_sec"):
+            node_module.HandRetargetingNode(parameter_overrides=overrides)
+    finally:
         rclpy.shutdown()

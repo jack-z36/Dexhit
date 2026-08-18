@@ -48,3 +48,42 @@ def scene_payload(*, sequence: int = 0, left: bool = True, right: bool = True) -
         },
     }
     return json.dumps(document, separators=(",", ":")).encode("utf-8")
+
+
+def calibrated_scene_payload(
+    *, sequence: int = 0, left: bool = True, right: bool = True,
+    invalid_finger: int | None = None, degenerate_palm: bool = False,
+) -> bytes:
+    """Return a stable, non-degenerate public replay fixture.
+
+    This is intentionally a synthetic test fixture, not a claim about Rokoko
+    Studio output.  The wrist, four finger roots and each four-node chain are
+    fixed in a non-collinear palm layout so normalization and length freezing
+    can complete before the real ROS retargeting node is observed.
+    """
+    roots = (0.8, 0.6, 0.2, -0.2, -0.6)
+    body: dict[str, dict] = {}
+    for side, enabled, offset in (
+        ("left", left, 0.0),
+        ("right", right, 10.0),
+    ):
+        if not enabled:
+            continue
+        body[side + "Hand"] = _node((offset, 0.0, 0.0))
+        for finger, root_x in enumerate(roots):
+            if degenerate_palm:
+                root_x = 0.0
+            length = 1.2 if finger != invalid_finger else 2.4
+            for joint, fraction in enumerate((0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0)):
+                body[side + NODE_SUFFIXES[1 + finger * 4 + joint]] = _node(
+                    (offset + root_x, 1.0 + length * fraction, 0.02 * finger)
+                )
+    document = {
+        "version": 3,
+        "fps": 60,
+        "scene": {
+            "timestamp": 2000.0 + sequence / 60.0,
+            "actors": [{"name": "T10CalibratedReplay", "body": body}],
+        },
+    }
+    return json.dumps(document, separators=(",", ":")).encode("utf-8")

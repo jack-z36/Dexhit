@@ -4,7 +4,7 @@
 
 | Skill | 用途 | 触发条件 | 入口 |
 | --- | --- | --- | --- |
-| `acceptance-testing` | 第一版程序完成后执行基于真实运行证据的 AI 验收测试：运行程序、采集证据、沿数据流分析差异、定位根因、修复并强制复验 | 用户要求验收 / acceptance，或要求验证已实现功能是否真正符合 Spec（基于真实运行，不是只看代码） | [SKILL.md](acceptance-testing/SKILL.md) |
+| `acceptance-testing` | 第一版程序完成后执行基于真实运行证据的 AI 验收测试：运行程序、采集证据、沿数据流分析差异、定位根因、修复并强制复验；实验方案与修复方案设人类审核关卡，执行结果由 Reviewer Agent 审查 | 用户要求验收 / acceptance，或要求验证已实现功能是否真正符合 Spec（基于真实运行，不是只看代码） | [SKILL.md](acceptance-testing/SKILL.md) |
 | `code-review` | 对固定基点以来的变更做规范与规格双轴审查 | 用户要求 review、审查分支或 PR | [SKILL.md](code-review/SKILL.md) |
 | `codebase-design` | 用 deep module 词汇设计或改进模块接口 | 讨论模块接口、可测试性或架构深化 | [SKILL.md](codebase-design/SKILL.md) |
 | `architecture-design` | 把已有 Spec 映射为 Codebase Architecture（层级/依赖规则/包边界/端口适配器/不变量/架构测试），产出 `DOCS/01_知识/ARCHITECTURE.md` | 用户有 spec 要设计代码库架构、层级或依赖设计 | [SKILL.md](architecture-design/SKILL.md) |

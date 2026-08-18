@@ -42,6 +42,9 @@ bool[5] has_valid_ik
 bool[5] used_previous_valid_target
 bool[5] residual_available
 float64[5] normalized_residual
+bool[5] target_projection_applied
+bool[5] target_projection_distance_available
+float64[5] normalized_target_projection_distance
 int32[5] solver_result_code
 uint32[5] solver_evaluations
 

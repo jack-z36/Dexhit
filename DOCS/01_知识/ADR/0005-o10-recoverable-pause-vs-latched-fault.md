@@ -11,3 +11,11 @@ O10 控制链对每个逻辑手侧区分可自动恢复暂停和锁存控制故�
 锁存故障不能因错误信号短暂消失而自动清除。操作者必须显式请求清除；当前错误必须为零、通信必须健康，并且硬件 Adapter 必须独立读取一帧新鲜合法的真实主动关节状态以重新初始化硬限制器。清除成功后仍保持未使能，操作者必须再次显式使能。
 
 Phase 1 对 `stalled`、`overheat`、`over_current`、`motor_except` 和 `commu_except` 全部采用保守锁存策略。厂商错误状态是触发式读取，正式实现必须主动轮询并定义频率和超时。命令—反馈跟踪误差暂不作为故障依据，直至确认 `joint_states` 的物理测量语义。
+
+## 修订：`commu_except` 不作为锁存故障依据
+
+依据官方 Agilink OmniHand SDK（`agillink_omnihand_sdk` 仓库测试套件 `test_omnihand_2025.py`）对错误位的权威说明：
+
+> “X (Communication exception) may indicate historical communication errors. This is normal if the device had previous communication timeouts.”
+
+即厂商错误字 bit4（`commu_except`）表示**历史通信异常标记**，不反映当前硬件故障，且**不阻止厂商侧控制**。因此控制侧将 bit4 从“锁存 `HARDWARE_ERROR` 故障”的判定中排除：只有 bit0–bit3（`stalled`、`overheat`、`over_current`、`motor_except`）任一非零才锁存故障；`hardware_error_bits` 仍保留原始错误字（含 bit4）用于诊断，`clear_fault` 的错误检查同样忽略 bit4。该修订不影响其他锁存依据（回读超时、非法反馈、安全不变量、组件重启/断开、错误监控超时）。

@@ -31,11 +31,14 @@ from pathlib import Path
 
 STATES = [
     "PLANNING",
+    "EXPERIMENT_DESIGNING",
+    "WAITING_HUMAN_EXPERIMENT_REVIEW",
     "EXPERIMENTING",
     "ANALYZING",
     "NEED_MORE_EVIDENCE",
     "ROOT_CAUSE_CONFIRMED",
     "SOLUTION_PLANNING",
+    "WAITING_HUMAN_SOLUTION_REVIEW",
     "EXECUTING",
     "REVALIDATING",
     "VERIFIED_PASS",
@@ -46,13 +49,17 @@ STATES = [
     "OUT_OF_SCOPE",
 ]
 
-ROLE_KEYS = ["experimenter", "analyst", "solution_planner", "executor"]
+ROLE_KEYS = ["experimenter", "analyst", "solution_planner", "executor", "reviewer"]
 ROLE_FILES = {
     "experimenter": "experimenter.md",
     "analyst": "analyst.md",
     "solution_planner": "solution-planner.md",
     "executor": "executor.md",
+    "reviewer": "reviewer.md",
 }
+
+VERDICT_RE = re.compile(r"裁决[：:]\s*(PASS|FAIL|BLOCKED_ENV|BLOCKED_HARDWARE_EXPECTED)")
+APPROVAL_PLACEHOLDER = "（待人类签署）"
 
 MANIFEST_TEMPLATE = """# Acceptance Run Manifest
 
@@ -61,7 +68,8 @@ MANIFEST_TEMPLATE = """# Acceptance Run Manifest
 - Acceptance Goal: {goal}
 - Simulated: {simulated}   # true 表示桌面演练，所有报告不是真实运行证据
 - State: PLANNING
-- Loop Budget: 补充实验 <=3/次分析；task 修复 <=3 轮；整循环 <=3 次
+- Loop Budget: 补充实验 <=3/次分析；task 修复（execute-review）<=3 轮；整循环 <=3 次
+- Human Gates: 实验方案审批（每个 EXP 的 request.md）；解决方案审批（solution.md）
 - Experiments:
 - Tasks:
 - Final State: (未完成)
@@ -155,9 +163,40 @@ def cmd_check(args: argparse.Namespace) -> int:
     if state in order and order[state] >= order["SOLUTION_PLANNING"]:
         if not (run_dir / "solution" / "solution.md").exists():
             problems.append("State >= SOLUTION_PLANNING 但缺少 solution/solution.md")
+
+    # 人类审核关卡：
+    # - >= EXPERIMENTING：每个实验 request.md 必须有已签署的 Human Approval
+    # - >= EXECUTING：solution.md 必须有已签署的 Human Approval
+    if state in order and order[state] >= order["EXPERIMENTING"]:
+        for d in sorted((run_dir / "experiments").glob("EXP-*")):
+            req = d / "request.md"
+            if not req.exists():
+                continue
+            text = req.read_text(encoding="utf-8")
+            if "## Human Approval" not in text:
+                problems.append(f"{d.name} request.md 缺少 Human Approval 节")
+            elif APPROVAL_PLACEHOLDER in text:
+                problems.append(f"{d.name} request.md 的 Human Approval 未签署（仍为占位符）")
+    if state in order and order[state] >= order["EXECUTING"]:
+        sol = run_dir / "solution" / "solution.md"
+        if sol.exists():
+            text = sol.read_text(encoding="utf-8")
+            if "## Human Approval" not in text:
+                problems.append("solution.md 缺少 Human Approval 节")
+            elif APPROVAL_PLACEHOLDER in text:
+                problems.append("solution.md 的 Human Approval 未签署（仍为占位符）")
+
+    # 状态 >= REVALIDATING：每个 task 必须有 execution report 与 reviewer 审查报告（含四态裁决）
+    if state in order and order[state] >= order["REVALIDATING"]:
         for t in sorted((run_dir / "solution" / "tasks").glob("TASK-*.md")):
-            if not (run_dir / "execution" / f"{t.stem}-report.md").exists():
+            report = run_dir / "execution" / f"{t.stem}-report.md"
+            review = run_dir / "execution" / f"{t.stem}-review.md"
+            if not report.exists():
                 problems.append(f"task 缺少对应 execution report: {t.stem}")
+            if not review.exists():
+                problems.append(f"task 缺少对应 execution review: {t.stem}")
+            elif not VERDICT_RE.search(review.read_text(encoding="utf-8")):
+                problems.append(f"{t.stem}-review.md 缺少四态裁决（PASS/FAIL/BLOCKED_ENV/BLOCKED_HARDWARE_EXPECTED）")
 
     # 终局必须有 final-report.md
     if state in ("VERIFIED_PASS", "VERIFIED_FAIL", "NOT_VERIFIED", "EVIDENCE_INSUFFICIENT", "BLOCKED", "OUT_OF_SCOPE"):

@@ -15,6 +15,10 @@ config_files = [
     path.relative_to(package_root).as_posix()
     for path in sorted((package_root / "config").glob("*.yaml"))
 ]
+launchpad_profile_files = [
+    path.relative_to(package_root).as_posix()
+    for path in sorted((package_root / "launchpad").glob("*.yaml"))
+]
 
 setup(
     name=package_name,
@@ -25,6 +29,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", launch_files),
         ("share/" + package_name + "/config", config_files),
+        ("share/" + package_name + "/launchpad", launchpad_profile_files),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

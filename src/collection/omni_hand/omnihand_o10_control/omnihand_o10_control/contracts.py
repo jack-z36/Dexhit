@@ -21,6 +21,8 @@ __all__ = [
     "TargetResult",
     "TargetRejectReason",
     "FaultReason",
+    "VENDOR_ERROR_BIT_COMMU_EXCEPT",
+    "FATAL_ERROR_BIT_MASK",
     "ArmCode",
     "DisarmCode",
     "ClearFaultCode",
@@ -113,6 +115,19 @@ class TargetResult(Enum):
 
 # Kept as a package-local semantic alias for existing pure validation imports.
 TargetRejectReason = TargetResult
+
+
+# Vendor O10 per-joint error-word bit layout (Agilink SDK / official ROS2
+# contract, bit indices are 0-based):
+#   bit0 = stalled, bit1 = overheat, bit2 = over_current,
+#   bit3 = motor_except, bit4 = commu_except.
+# The vendor treats bit4 (commu_except) as a HISTORICAL communication marker
+# ("may indicate historical communication errors ... normal if the device had
+# previous communication timeouts", official SDK test suite); it does not stop
+# vendor-side control. Only bits 0-3 represent an actual current hardware fault.
+VENDOR_ERROR_BIT_COMMU_EXCEPT: int = 1 << 4
+#: Mask of error-word bits that latch a HARDWARE_ERROR control fault.
+FATAL_ERROR_BIT_MASK: int = 0xFFFF & ~VENDOR_ERROR_BIT_COMMU_EXCEPT
 
 
 class FaultReason(Enum):

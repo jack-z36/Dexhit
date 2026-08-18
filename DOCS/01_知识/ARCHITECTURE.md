@@ -2,7 +2,7 @@
 
 > 状态：本文同时记录**当前事实**与已经接受但尚未完成的**目标设计**；各节分别标注。  
 > Originating spec：[Rokoko 到 OmniHand O10 实时遥操作系统 Spec](../03_工程/01_Rokoko到OmniHand_O10实时遥操作系统Spec.md)，[GitHub Issue #1](https://github.com/jack-z36/Dexhit/issues/1)  
-> Related ADRs：[ADR-0001](ADR/0001-o10-active-joint-constrained-kinematics.md)、[ADR-0002](ADR/0002-phase1-single-finger-ik-slsqp-analytic-gradient.md)、[ADR-0003](ADR/0003-o10-feedback-initialized-event-driven-slew-limit.md)、[ADR-0004](ADR/0004-o10-explicit-per-side-operator-arming.md)、[ADR-0005](ADR/0005-o10-recoverable-pause-vs-latched-fault.md)、[ADR-0006](ADR/0006-stale-recovery-validation-and-bounded-resume.md)、[ADR-0007](ADR/0007-o10-versioned-minimal-runtime-model-assets.md)、[ADR-0008](ADR/0008-o10-control-event-effect-hardware-port.md)、[ADR-0009](ADR/0009-phase1-owned-runtime-python.md)、[ADR-0010](ADR/0010-o10-fresh-active-joint-read-service.md)
+> Related ADRs：[ADR-0001](ADR/0001-o10-active-joint-constrained-kinematics.md)、[ADR-0002](ADR/0002-phase1-single-finger-ik-slsqp-analytic-gradient.md)、[ADR-0003](ADR/0003-o10-feedback-initialized-event-driven-slew-limit.md)、[ADR-0004](ADR/0004-o10-explicit-per-side-operator-arming.md)、[ADR-0005](ADR/0005-o10-recoverable-pause-vs-latched-fault.md)、[ADR-0006](ADR/0006-stale-recovery-validation-and-bounded-resume.md)、[ADR-0007](ADR/0007-o10-versioned-minimal-runtime-model-assets.md)、[ADR-0008](ADR/0008-o10-control-event-effect-hardware-port.md)、[ADR-0009](ADR/0009-phase1-owned-runtime-python.md)、[ADR-0010](ADR/0010-o10-fresh-active-joint-read-service.md)、[ADR-0011](ADR/0011-launchpad-real-hardware-test-boundary.md)、[ADR-0012](ADR/0012-launchpad-device-orchestration-layer.md)
 
 本文只规定实时手部遥操作系统在 `collection` 阶段的代码结构、依赖方向、包边界、端口、所有权和架构门禁。业务行为以 originating spec 和相应接口契约为准；本文不重新定义算法、参数或产品范围。
 
@@ -38,6 +38,10 @@ O10 控制节点
 ```
 
 外部 rosbag2/MCAP 观察 Raw、重定向状态、软目标、控制状态、最终命令与反馈；三个业务节点均不直接写 MCAP。
+
+Launchpad 是运行在本机 `127.0.0.1:8710` 的控制面和设备编排层。T01 只提供
+FastAPI/Vite 控制面、单实例生命周期与占位首页，不启动任何业务节点；后续 ticket
+通过公开进程入口和 ROS 接口选择业务组合。Launchpad 不侵入业务节点内部状态机。
 
 无真实硬件自动化验收使用相同的前三个业务节点，但以纯软件 Provider 代替厂商 Provider：
 
@@ -109,23 +113,27 @@ Phase 1 的 Dexhit 自有运行代码固定为 Python 3/`ament_python`。`rokoko
 
 ### 目标包布局
 
-所有受管包位于 `src/collection/omni_hand/`。包名是依赖边界，不创建跨包 `utils`、`common` 或隐式共享目录。
+现有 ROS 业务包位于 `src/collection/omni_hand/`，Launchpad 是
+`src/collection/` 下与其平级的独立 `ament_python` 包；两者都由 collection 的
+colcon 入口发现。包名是依赖边界，不创建跨包 `utils`、`common` 或隐式共享目录。
 
 ```text
-src/collection/omni_hand/
-├── rokoko_omnihand_msgs/                 # ROSIDL wire schema
-├── omnihand_o10_contracts/               # 纯 O10 共享语义和值对象
-├── omnihand_o10_model/                   # 无节点、版本锁定的核心资产
-├── rokoko_hand_receiver/                 # Rokoko 接收节点
-├── hand_retargeting/                     # 手部重定向节点
-├── omnihand_o10_control/                 # O10 控制节点（改造现有包）
-├── omnihand_o10_hardware_adapter/        # 生产 O10HardwarePort Provider
-├── rokoko_omnihand_bringup/              # 仅生产 composition
-├── rokoko_omnihand_system_test/           # 无真机 Provider 与端到端行为测试
-└── rokoko_omnihand_architecture_test/     # 跨包结构门禁
+src/collection/
+├── rokoko_omnihand_launchpad/            # 本机控制面与设备编排层（T01 骨架）
+└── omni_hand/
+    ├── rokoko_omnihand_msgs/             # ROSIDL wire schema
+    ├── omnihand_o10_contracts/           # 纯 O10 共享语义和值对象
+    ├── omnihand_o10_model/               # 无节点、版本锁定的核心资产
+    ├── rokoko_hand_receiver/             # Rokoko 接收节点
+    ├── hand_retargeting/                 # 手部重定向节点
+    ├── omnihand_o10_control/             # O10 控制节点（改造现有包）
+    ├── omnihand_o10_hardware_adapter/    # 生产 O10HardwarePort Provider
+    ├── rokoko_omnihand_bringup/          # 仅生产 composition
+    ├── rokoko_omnihand_system_test/      # 无真机 Provider 与端到端行为测试
+    └── rokoko_omnihand_architecture_test/ # 跨包结构门禁
 ```
 
-上述十个包中只有 `rokoko_hand_receiver`、`hand_retargeting`、`omnihand_o10_control` 提供业务节点。`omnihand_o10_hardware_adapter` 可以提供厂商 shim/Provider 进程，但它是外部设备适配层，不拥有业务状态，因此不计为第四个稳定业务功能节点。消息、Contracts、资产和测试包不提供生产业务节点；bringup 只做 composition。
+上述十一个受管包中只有 `rokoko_hand_receiver`、`hand_retargeting`、`omnihand_o10_control` 提供业务节点。`omnihand_o10_hardware_adapter` 可以提供厂商 shim/Provider 进程，但它是外部设备适配层，不拥有业务状态，因此不计为第四个稳定业务功能节点。Launchpad 是控制面进程，不是业务节点；消息、Contracts、资产和测试包不提供生产业务节点；bringup 只做 composition。
 
 | 包 | Responsibility / Owns | Allowed dependencies | Must not |
 | --- | --- | --- | --- |
@@ -139,6 +147,7 @@ src/collection/omni_hand/
 | `rokoko_omnihand_bringup` | 生产 launch、参数文件定位、三业务节点与生产 Provider composition | 三业务运行包、生产硬件 Adapter、接口/资产包 | 包含业务规则、算法、测试 Provider；成为其他业务包依赖 |
 | `rokoko_omnihand_system_test` | 纯软件 Provider、JSON fixtures、无真机 launch test、MCAP/端到端行为测试 | `rokoko_hand_receiver`、`hand_retargeting`、`omnihand_o10_control`、公开接口/Contracts/资产包和测试工具 | 依赖或加载 `omnihand_o10_hardware_adapter`、厂商节点/SDK/设备库；被任何生产包依赖；出现在生产 launch |
 | `rokoko_omnihand_architecture_test` | 解析 package manifests/imports/launch 声明，执行本文跨包门禁 | 源码树元数据与测试工具 | 被生产包依赖；承载业务行为测试 |
+| `rokoko_omnihand_launchpad` | 本机 FastAPI 控制面、无业务副作用的 `rclpy` spin、Vue/ECharts 静态前端、单实例锁和后续设备进程编排边界；T01 不启动业务节点 | FastAPI/uvicorn、rclpy、前端构建工具；后续按模式选择四个业务包，`rokoko_omnihand_system_test` 仅 mock 模式 | 导入业务内部状态、暴露 arm/disarm/clear_fault；真机模式引用 `system_test`；被业务包反向依赖 |
 
 每个业务包内部使用同一命名规则：
 
@@ -163,6 +172,7 @@ flowchart TD
     VENDOR["Vendor omnihand_node / SDK / CAN / USB"]
     BAG["External rosbag2 / MCAP"]
     BR["rokoko_omnihand_bringup"]
+    LP["rokoko_omnihand_launchpad"]
     ST["rokoko_omnihand_system_test"]
     AT["rokoko_omnihand_architecture_test"]
     RR["rokoko_hand_receiver"]
@@ -180,6 +190,12 @@ flowchart TD
     BR --> MSG
     BR --> MODEL
     BR --> ROS
+
+    LP --> RR
+    LP --> HR
+    LP --> OC
+    LP --> HA
+    LP -. "mock mode only" .-> ST
 
     ST --> RR
     ST --> HR
@@ -219,7 +235,9 @@ flowchart TD
     MODEL --> ROS
 ```
 
-虚线 `inspects` 表示架构测试读取源码/manifest，不是生产 import 边。`BAG` 只被测试/外部 composition 使用；三个业务节点不依赖 MCAP writer。生产 Provider 使用 wire schema 与 ROS 名称，但不能成为 Core/Application 的 import 依赖。
+虚线 `inspects` 表示架构测试读取源码/manifest，不是生产 import 边；Launchpad 到
+`system_test` 的虚线表示只有 mock 模式的可选编排引用。T01 骨架当前不声明这些
+业务包 manifest 依赖，后续编排 ticket 必须按模式 adapter 落实该方向。`BAG` 只被测试/外部 composition 使用；三个业务节点不依赖 MCAP writer。生产 Provider 使用 wire schema 与 ROS 名称，但不能成为 Core/Application 的 import 依赖。
 
 本 DAG 是**包级**依赖图；包内 `core/`、`application/`、`adapters/` 之间的方向无法由包级边表达，改由 A02/A03/A13 的包内 import lint 约束。例如 `hand_retargeting → NUM` 表示该包的 Adapter 使用 Pinocchio/NLopt，不表示 Application 直接依赖数值后端。
 
@@ -260,6 +278,7 @@ flowchart TD
 | O10 硬件 | `O10HardwarePort` 纯事件/效果能力；ROS wire contract 独立编码 | `omnihand_o10_control` Application | `omnihand_o10_hardware_adapter` 厂商 Provider | `rokoko_omnihand_system_test` 纯软件 Provider |
 | 配置 | 每个业务包的不可变配置值对象；不是共享 Port | 对应业务包 Application | ROS parameter Adapter；启动时一次性解析/校验 | 显式测试配置，不使用生产默认 |
 | MCAP | 公开 ROS Topic 观察边界；业务节点无 writer Port | 外部 collection 录制编排 | 外部 rosbag2 recorder | 系统测试 recorder |
+| Launchpad HTTP/进程生命周期 | 本机 HTTP 控制面、单实例锁、子进程编排边界 | `rokoko_omnihand_launchpad` | T01 仅 FastAPI/uvicorn 入口；后续为业务进程 adapter | 替身进程与 HTTP 黑盒测试由 Launchpad 测试 seam 拥有 |
 
 每个 Port 的能力形状由上表唯一 owner 定义；跨包纯值来自 `omnihand_o10_contracts`，ROS wire schema 来自 `rokoko_omnihand_msgs`。Port 不因为当前生产 Adapter 缺能力而降级。只有两个真实用途（生产 Provider 与纯软件 Provider，或真实数值后端与确定性测试后端）才建立 Port；普通纯函数不包一层接口。
 
@@ -337,6 +356,7 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 | 生产 composition | `rokoko_omnihand_bringup` |
 | 无真机 Provider、故障注入与系统 fixture | `rokoko_omnihand_system_test` |
 | MCAP 文件生命周期 | 外部 collection 录制编排，不属于三个业务节点 |
+| Launchpad 单实例所有权、监听地址和占位首页 | `rokoko_omnihand_launchpad` 控制面 |
 
 左右 aggregate 不共享可变状态；共享模型和不可变配置必须只读。
 
@@ -368,6 +388,8 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 | A20 | 生产 composition MUST 只包含三个 Dexhit 业务节点、允许的生产 Provider/shim 和外部厂商节点；任何测试包或纯软件 Provider MUST NOT 出现 | launch structure test + executable/package allowlist inventory | `test_production_business_node_inventory` | ENFORCED；厂商 Provider/shim 进程不计为业务节点 |
 | A21 | 硬件 Adapter、bringup、消息、资产和测试包 MUST NOT 拥有授权、故障、IK、stale 或限速业务状态 | reviewer checklist：逐包检查 state fields、callbacks 和 lifecycle ownership | reviewer checklist | manual review only |
 | A22 | Phase 1 Dexhit 自有运行包 MUST 使用 Python 3/`ament_python`；若引入 C++，必须先加入 include/CMake/link 门禁并更新 ADR | manifest build_type/executable inventory test | `test_owned_runtime_language_policy` | ENFORCED |
+| A23 | Launchpad MUST be a sibling package under `src/collection`, MUST bind its T01 control plane to `127.0.0.1:8710`, and MUST NOT start business nodes | package/source boundary test plus T01 black-box HTTP test | `test_launchpad_skeleton_boundary` | ENFORCED |
+| A24 | Launchpad MUST NOT make production composition depend on `rokoko_omnihand_system_test`; only a mock-mode adapter may reference that package | manifest/import/source scan; mode-specific composition test in later ticket | `test_production_excludes_test_provider` plus launchpad boundary gate | ENFORCED for T01 skeleton; mock-mode behavior pending |
 
 任何 GAP 未关闭前，相应 invariant 只能算目标设计。架构测试必须作为 `colcon test` 和 CI 的阻断步骤；不能仅在文档中声明“遵守”。
 

@@ -2,7 +2,7 @@
 name: solution-planner
 description: "acceptance-testing 的 Solution Agent：基于 Investigation Report 制定修复方案并拆成单上下文可完成的 Micro Tasks。不重新调查根因，禁止修改生产代码。"
 tools: Read, Bash, Grep, Glob, Write
-model: gpt-5.6-luna
+model: gpt-5.6-sol
 ---
 
 # Solution Agent（方案规划）

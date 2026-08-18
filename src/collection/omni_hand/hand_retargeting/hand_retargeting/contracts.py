@@ -61,6 +61,7 @@ class RetargetingConfig:
     stale_timeout_sec: float
     recovery_min_valid_frames: int
     recovery_min_duration_sec: float
+    recovery_confirmation_timeout_sec: float
 
     def __post_init__(self) -> None:
         for name in ("palm_y_epsilon", "palm_x_epsilon", "finger_length_epsilon"):
@@ -83,7 +84,10 @@ class RetargetingConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("ik_max_time_sec", "stale_timeout_sec", "recovery_min_duration_sec"):
+        for name in (
+            "ik_max_time_sec", "stale_timeout_sec", "recovery_min_duration_sec",
+            "recovery_confirmation_timeout_sec",
+        ):
             object.__setattr__(self, name, _positive_number(getattr(self, name), name))
 
 
@@ -124,6 +128,12 @@ class RetargetingDecision:
     recovery_valid_duration_sec: float = 0.0
     solve_duration_sec: float = math.nan
     solve_finished_at_ns: int | None = None
+    # Projection diagnostics are independent of IK residual diagnostics.  An
+    # identity target is available with distance zero; all other unavailable
+    # cases stay unavailable with NaN rather than using a sentinel distance.
+    target_projection_applied: tuple[bool, ...] = (False,) * 5
+    target_projection_distance_available: tuple[bool, ...] = (False,) * 5
+    normalized_target_projection_distance: tuple[float, ...] = (math.nan,) * 5
 
 
 def _positive_vector(value: object, size: int, name: str) -> tuple[float, ...]:

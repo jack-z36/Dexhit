@@ -8,6 +8,8 @@ from hand_retargeting.application.session import RetargetingSession
 from hand_retargeting.contracts import RawHandFrameValue, RetargetingConfig
 from hand_retargeting.core.coupling import CouplingModel
 from hand_retargeting.core.ik import FingerProblem, objective_and_gradient
+from hand_retargeting.core.ik import validate_candidate
+from hand_retargeting.core.projection import build_projection_witness
 from hand_retargeting.core.normalization import RobotHandGeometry
 import numpy as np
 from omnihand_o10_contracts import JOINT_LIMITS, Side
@@ -30,6 +32,7 @@ def _config(**changes):
         "stale_timeout_sec": 0.5,
         "recovery_min_valid_frames": 2,
         "recovery_min_duration_sec": 0.1,
+        "recovery_confirmation_timeout_sec": 0.5,
     }
     values.update(changes)
     return RetargetingConfig(**values)
@@ -89,6 +92,56 @@ class _Optimizer:
             return _Result(None, solver_usable=False)
         candidate = np.asarray(initial if self.candidates is None else self.candidates.pop(0))
         return _Result(candidate)
+
+
+class _ProjectionKinematics:
+    def tip_position_and_jacobian(self, full_q, tip_frame):
+        return np.asarray(full_q[:3], dtype=float), np.zeros((3, 16))
+
+
+def _projection_problem(target):
+    return FingerProblem(
+        (0, 1, 2), "R_thumb_tip", 1.0, np.asarray(target, dtype=float),
+        np.full(3, -1.0), np.full(3, 1.0),
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_target", ((0.0, 0.0, 2.0), (0.0, 0.0, -2.0), (2.0, 0.0, 0.0)),
+    ids=("A-dir", "A-under", "A-ext"),
+)
+def test_projection_witness_keeps_raw_invalid_and_accepts_fk_projected_target(raw_target):
+    coupling = CouplingModel.from_contract("right")
+    kinematics = _ProjectionKinematics()
+    problem = _projection_problem(raw_target)
+    candidate = np.array((0.25, -0.25, 0.5))
+
+    raw = validate_candidate(
+        candidate, problem, coupling, kinematics, True, 5, 3, 0.05
+    )
+    witness = build_projection_witness(problem, candidate, coupling, kinematics)
+    projected_evidence = validate_candidate(
+        witness.active, _projection_problem(witness.target), coupling,
+        kinematics, True, 5, 3, 0.05,
+    )
+
+    assert raw.valid is False
+    assert witness.available is True
+    assert witness.target == pytest.approx(candidate)
+    assert witness.distance == pytest.approx(np.linalg.norm(
+        np.asarray(raw_target) - candidate
+    ))
+    assert projected_evidence.valid is True
+    assert projected_evidence.residual == pytest.approx(0.0)
+
+
+def test_projection_witness_rejects_nonfinite_candidate():
+    witness = build_projection_witness(
+        _projection_problem((0.0, 0.0, 1.0)), np.array((np.nan, 0.0, 0.0)),
+        CouplingModel.from_contract("right"), _ProjectionKinematics(),
+    )
+    assert witness.available is False
+    assert np.isnan(witness.distance)
 
 
 def test_coupling_jacobian_matches_independent_central_difference():
@@ -173,6 +226,53 @@ def test_stale_recovery_requires_contiguous_frames_and_holds_before_following():
     assert resumed.command_positions == pytest.approx(held_target)
 
 
+def test_stale_recovery_times_out_to_stale_and_restarts_confirmation_window():
+    optimizer = _Optimizer()
+    session = RetargetingSession(
+        Side.RIGHT, _config(), _geometry(), coupling=CouplingModel.from_contract("right"),
+        kinematics=_Kinematics(), optimizer=optimizer,
+    )
+    for stamp in (1, 2, 3, 4, 5):
+        session.process(_frame(stamp))
+    session.mark_stale()
+
+    first = session.process(_frame(1_000_000_000))
+    assert first.phase == "recovery-confirming"
+    assert first.recovery_valid_count == 1
+    optimizer.fail = True
+    timed_out = session.process(_frame(1_600_000_001))
+    assert timed_out.phase == "stale"
+    assert timed_out.stale is True
+    assert timed_out.command_published is False
+    assert all(timed_out.has_valid_ik) is False
+    assert timed_out.recovery_valid_count == 0
+    assert timed_out.recovery_valid_duration_sec == 0.0
+
+    optimizer.fail = False
+    restarted = session.process(_frame(2_000_000_000))
+    assert restarted.phase == "recovery-confirming"
+    assert restarted.recovery_valid_count == 1
+
+
+def test_recovery_timeout_attempt_start_survives_invalid_frames():
+    optimizer = _Optimizer()
+    session = RetargetingSession(
+        Side.RIGHT, _config(), _geometry(), coupling=CouplingModel.from_contract("right"),
+        kinematics=_Kinematics(), optimizer=optimizer,
+    )
+    for stamp in (1, 2, 3, 4, 5):
+        session.process(_frame(stamp))
+    session.mark_stale()
+    optimizer.fail = True
+    first = session.process(_frame(1_000_000_000))
+    assert first.phase == "recovery-confirming"
+    still_confirming = session.process(_frame(1_400_000_000))
+    assert still_confirming.phase == "recovery-confirming"
+    timed_out = session.process(_frame(1_600_000_001))
+    assert timed_out.phase == "stale"
+    assert timed_out.recovery_valid_count == 0
+
+
 def test_t06_side_aggregates_do_not_share_ik_or_filter_history():
     left = RetargetingSession(
         Side.LEFT, _config(), _geometry(), coupling=CouplingModel.from_contract("left"),
@@ -209,6 +309,11 @@ def test_real_backend_decision_uses_python_bools_for_ros_boolean_arrays():
         decision.residual_available,
     ):
         assert all(type(value) is bool for value in values)
+    assert all(type(value) is bool for value in decision.target_projection_applied)
+    assert all(
+        type(value) is bool
+        for value in decision.target_projection_distance_available
+    )
 
 
 def test_nlopt_adapter_accepts_objective_only_callback_without_gradient_buffer():

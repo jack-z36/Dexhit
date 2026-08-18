@@ -8,6 +8,8 @@
 
 ## 1. Experiment Request — `experiments/EXP-nnn/request.md`
 
+草案阶段 `Human Approval` 留空；**人类批准后由用户签署（审核人/时间/意见），签署前不得派发执行**。硬件相关实验（C 档/真实设备/真实抓包）必须经多轮共同设计后再签署。
+
 ```markdown
 # Experiment Request EXP-{{nnn}}
 
@@ -18,8 +20,11 @@
 ## Objective
 {{本次实验要回答的一个明确问题；必须可被观测结果回答}}
 
+## Rationale
+{{为什么需要这个实验；它能区分哪些 competing hypotheses；补充实验注明由哪个假设驱动}}
+
 ## Environment
-{{harness 档位（A/B/C）、节点与参数、依赖环境、git revision}}
+{{harness 档位（A/B/C）、节点与参数、依赖环境、git revision；C 档须列硬件与安全前置}}
 
 ## Preconditions
 {{实验开始前必须成立的条件；不成立时实验不得开始}}
@@ -43,6 +48,11 @@
 
 ## Required Repetitions
 {{重复次数；随机/时序类实验至少 3 次}}
+
+## Human Approval
+- 审核人：（待人类签署）
+- 时间：
+- 意见 / 修改要求：
 ```
 
 ## 2. Raw Experiment Report — `experiments/EXP-nnn/raw-report.md`
@@ -129,8 +139,16 @@
 
 ## 4. Solution Proposal — `solution/solution.md`
 
+Goal Definition 与 Success Evaluation 是人类审核的重点，缺一即被编排者拒收；Human Approval 留空待用户签署，签署前不得派发任何 Execution Agent。
+
 ```markdown
 # Solution Proposal — Run {{run-id}}
+
+## Goal Definition
+{{最终需要达成的目标：可观测、可判定的达成标准，不含实现方式}}
+
+## Success Evaluation
+{{如何评估改动已达成目标：对应哪些探针点（P0–P6）、修复后要跑什么复验实验、预期观察到什么}}
 
 ## Confirmed Problem
 ## Confirmed Root Cause
@@ -147,6 +165,11 @@
 
 ## Micro Tasks
 {{TASK-nnn 列表 + 依赖关系}}
+
+## Human Approval
+- 审核人：（待人类签署）
+- 时间：
+- 意见 / 修改要求：
 ```
 
 ## 5. Micro Task — `solution/tasks/TASK-nnn.md`
@@ -189,7 +212,32 @@
 {{未验证项与原因}}
 ```
 
-## 7. Final Report — `final-report.md`
+## 7. Execution Review Report — `execution/TASK-nnn-review.md`
+
+```markdown
+# Execution Review — TASK-{{nnn}}
+
+- Reviewer: Execution Reviewer（只读）
+- 裁决：{{PASS / FAIL / BLOCKED_ENV / BLOCKED_HARDWARE_EXPECTED}}
+
+## Acceptance Criteria 核对
+- [x] {{criterion 1}} — 证据：{{report 行/命令输出/文件}}
+- [ ] {{criterion 2}} — 缺失：{{缺什么}}
+
+## 验证真实性
+{{Verification Command 是否真实运行且结果如实记录；声明不算证据}}
+
+## 范围合规
+{{改动是否越出 Allowed Scope；越权即 FAIL}}
+
+## 不变量与规范
+{{Standards 轴发现（采用 code-review 双轴方法，范围限本 task）}}
+
+## 修复请求（仅 FAIL 时）
+1. {{哪条 criteria 未达成、缺什么证据、需要改哪里}}
+```
+
+## 8. Final Report — `final-report.md`
 
 ```markdown
 # Final Acceptance Report — Run {{run-id}}
@@ -206,7 +254,7 @@
 {{First Divergence、Root Cause、Confidence}}
 
 ## Solution & Tasks
-{{方案摘要；task 状态表（done / blocked / failed / not-verified）}}
+{{方案摘要；task 状态表（done / blocked / failed / not-verified）及各 task 的 Reviewer 裁决}}
 
 ## Revalidation Result
 {{修复后复验实验与结论}}
@@ -215,6 +263,7 @@
 {{VERIFIED_PASS / VERIFIED_FAIL / NOT_VERIFIED / EVIDENCE_INSUFFICIENT / BLOCKED / OUT_OF_SCOPE}}
 
 ## Remaining Unverified Items
-## Human Checkpoints
+## Human Gates & Checkpoints
+{{实验方案审批、方案审批（审核人/时间）；条件 checkpoint 记录}}
 ## Limitations
 ```

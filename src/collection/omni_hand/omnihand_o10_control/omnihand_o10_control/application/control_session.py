@@ -20,6 +20,7 @@ from ..contracts import (
     DisarmCode,
     Effect,
     ErrorStatusReceived,
+    FATAL_ERROR_BIT_MASK,
     FaultReason,
     FeedbackReceived,
     InvalidErrorStatusReceived,
@@ -129,7 +130,15 @@ class ControlSession:
             self._last_heartbeat = event.monotonic_now
             self._error_query_in_flight = False
             self._error_monitor_ready = True
-            if any(int(value) != 0 for value in event.error.values):
+            # The vendor's commu_except bit (bit4) records HISTORICAL
+            # communication issues and, per the official Agilink SDK, does not
+            # stop vendor-side control. Only the remaining fatal bits
+            # (stalled / overheat / over_current / motor_except) latch a
+            # HARDWARE_ERROR control fault.
+            if any(
+                int(value) & FATAL_ERROR_BIT_MASK != 0
+                for value in event.error.values
+            ):
                 return self._latch_fault(
                     FaultReason.HARDWARE_ERROR,
                     event.received_at,
@@ -345,7 +354,11 @@ class ControlSession:
                     "clear_fault rejected: error status is invalid",
                     ros_now,
                 )
-            if any(int(bit) != 0 for bit in error_bits):
+            # commu_except (bit4) is a vendor-historical marker and is not a
+            # fatal hardware error; it must not block clear_fault.
+            if any(
+                int(bit) & FATAL_ERROR_BIT_MASK != 0 for bit in error_bits
+            ):
                 self._hardware_error_bits = tuple(int(bit) for bit in error_bits)
                 self._clear_fault_state = "idle"
                 return self._operation(

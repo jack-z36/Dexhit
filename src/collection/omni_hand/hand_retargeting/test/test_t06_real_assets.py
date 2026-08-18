@@ -166,8 +166,8 @@ def test_real_reachable_thumb_roundoff_keeps_candidate_for_validation():
     assert evidence.residual == pytest.approx(0.0, abs=1e-7)
 
 
-def test_real_unreachable_thumb_keeps_combined_command_suppressed():
-    """The original field-like target remains explicitly invalid and held."""
+def test_real_unreachable_thumb_projects_to_fk_target_and_keeps_validity_gate():
+    """A raw unreachable target is replaced only after FK-backed validation."""
     side = "right"
     assets = load_model()[side]
     geometry = load_robot_geometry(side)
@@ -205,7 +205,9 @@ def test_real_unreachable_thumb_keeps_combined_command_suppressed():
             RawHandFrameValue(frame.node_names, frame.positions, stamp)
         )
 
-    assert decision.ik_state[0] == "residual-exceeded"
-    assert decision.has_valid_ik[0] is False
-    assert all(decision.has_valid_ik[index] for index in range(1, 5))
-    assert decision.command_published is False
+    assert decision.ik_state[0] == "valid"
+    assert decision.has_valid_ik == (True,) * 5
+    assert decision.target_projection_applied[0] is True
+    assert decision.target_projection_distance_available[0] is True
+    assert decision.normalized_target_projection_distance[0] > 0.0
+    assert decision.command_published is True

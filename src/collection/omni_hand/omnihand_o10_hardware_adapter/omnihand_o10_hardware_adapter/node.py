@@ -71,6 +71,25 @@ class ProductionO10ProviderNode(Node):
                 f"/o10/{side.value}/read_active_joints",
                 lambda request, response, s=side: self._on_read(s, request, response),
             )
+        # The control node initialises its feedback limiter from a fresh
+        # joint_states sample before arming. The vendor only publishes a
+        # readback after a joint_cmd, so without a command there would never be
+        # a startup feedback sample and the side could never be armed. Publish
+        # the vendor's current active-joint positions periodically to provide
+        # that independent startup read (documented O10 control contract:
+        # "must supplement an independent startup read at the Adapter
+        # boundary").
+        self._feedback_timer = self.create_timer(
+            0.5, self._publish_feedback_periodic
+        )
+
+    def _publish_feedback_periodic(self) -> None:
+        for side in (Side.LEFT, Side.RIGHT):
+            if side not in self._applications:
+                continue
+            result = self._applications[side].read_active_joints()
+            if result.success and result.value is not None:
+                self.publish_feedback(result.value)
 
     def _declare_production_parameters(self) -> dict[str, object]:
         names: list[str] = []

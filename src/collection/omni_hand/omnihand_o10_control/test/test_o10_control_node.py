@@ -174,7 +174,9 @@ def test_armed_left_command_is_forwarded_and_the_right_is_untouched(graph):
     command_stamp = left_messages[0].header.stamp
     assert command_stamp.sec == published.header.stamp.sec
     assert abs(command_stamp.nanosec - published.header.stamp.nanosec) <= 1000
-    assert list(left_messages[0].name) == []
+    # The vendor provider requires the fixed active-joint order on the wire;
+    # the final command must carry it (and no velocity/effort).
+    assert list(left_messages[0].name) == list(ACTIVE_JOINT_NAMES)
     assert list(left_messages[0].velocity) == []
     assert list(left_messages[0].effort) == []
 
@@ -273,3 +275,28 @@ def test_arm_rejects_out_of_limit_target(graph):
     assert response.state.target_result == O10ControlState.TARGET_REJECTED_LIMIT
     assert not response.state.motion_enabled
     assert provider.left.commands_received == 0
+
+
+def test_commu_except_bit_alone_does_not_block_arm(graph):
+    """commu_except (bit4 = 16) is a vendor-historical marker and must not
+    latch a fault or block arming; a real fatal bit must still do so."""
+    provider, _, observer, executor = graph
+    command_pub = observer.create_publisher(
+        JointState, "/o10_control/left/command", 10
+    )
+    arm_client = observer.create_client(
+        ControlOperation, "/o10_control/left/arm"
+    )
+    assert spin_until(
+        executor,
+        lambda: command_pub.get_subscription_count() == 1
+        and provider.left.reads_received >= 1
+        and provider.left.error_queries_received >= 1,
+    )
+    # commu_except only: must NOT latch a fault or block arming.
+    provider.left.error_bits = (16, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    publish_target(executor, observer, command_pub, Side.LEFT)
+    response = call_operation(executor, arm_client, ControlOperation.Request())
+    assert response.success, f"arm failed with commu_except-only: {response.message}"
+    assert not response.state.fault_latched
+    assert response.state.motion_enabled

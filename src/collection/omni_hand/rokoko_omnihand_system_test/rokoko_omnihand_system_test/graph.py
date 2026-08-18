@@ -27,7 +27,7 @@ from omnihand_o10_control.node import O10ControlNode
 from rokoko_hand_receiver.node import RokokoHandReceiverNode
 
 from .provider import SoftwareO10ProviderNode
-from .scenes import scene_payload
+from .scenes import calibrated_scene_payload, scene_payload
 
 
 def _retarget_parameter_overrides() -> list[Parameter]:
@@ -46,6 +46,7 @@ def _retarget_parameter_overrides() -> list[Parameter]:
         Parameter("stale_timeout_sec", value=0.5),
         Parameter("recovery_min_valid_frames", value=3),
         Parameter("recovery_min_duration_sec", value=0.1),
+        Parameter("recovery_confirmation_timeout_sec", value=0.5),
     ]
 
 
@@ -92,7 +93,11 @@ class RosGraph:
 
     @classmethod
     def start(cls, *, control_overrides=None, **provider_kwargs) -> "RosGraph":
-        rclpy.init()
+        # Pytest owns one process-wide context; standalone callers may still
+        # start a graph in a fresh process.  Never re-initialize an active
+        # context between disposable graphs.
+        if not rclpy.ok():
+            rclpy.init()
         udp_port = _free_udp_port()
         receiver = RokokoHandReceiverNode(
             parameter_overrides=[
@@ -126,22 +131,34 @@ class RosGraph:
 
     def create_observers(self) -> None:
         self.raw_frames = {"left": [], "right": []}
+        self.raw_arrivals_ns = {"left": [], "right": []}
         self.retargeting_states = {"left": [], "right": []}
+        self.state_arrivals_ns = {"left": [], "right": []}
         self.control_states = {"left": [], "right": []}
         self.final_commands = {"left": [], "right": []}
+        self.soft_commands = {"left": [], "right": []}
+        self.soft_command_arrivals_ns = {"left": [], "right": []}
         self.feedback = {"left": [], "right": []}
         self.error_states = {"left": [], "right": []}
         for side in ("left", "right"):
             self.observer.create_subscription(
                 RawHandFrame,
                 f"/rokoko/{side}/raw_hand",
-                self.raw_frames[side].append,
+                lambda message, selected=side: self._observe_raw(selected, message),
                 10,
             )
             self.observer.create_subscription(
                 RetargetingState,
                 f"/hand_retargeting/{side}/state",
-                self.retargeting_states[side].append,
+                lambda message, selected=side: self._observe_state(selected, message),
+                10,
+            )
+            self.observer.create_subscription(
+                JointState,
+                f"/o10_control/{side}/command",
+                lambda message, selected=side: self._observe_soft_command(
+                    selected, message
+                ),
                 10,
             )
             self.observer.create_subscription(
@@ -189,6 +206,18 @@ class RosGraph:
             for operation in ("arm", "disarm", "clear_fault")
         }
 
+    def _observe_raw(self, side: str, message: RawHandFrame) -> None:
+        self.raw_frames[side].append(message)
+        self.raw_arrivals_ns[side].append(time.monotonic_ns())
+
+    def _observe_state(self, side: str, message: RetargetingState) -> None:
+        self.retargeting_states[side].append(message)
+        self.state_arrivals_ns[side].append(time.monotonic_ns())
+
+    def _observe_soft_command(self, side: str, message: JointState) -> None:
+        self.soft_commands[side].append(message)
+        self.soft_command_arrivals_ns[side].append(time.monotonic_ns())
+
     def spin_until(self, predicate, timeout_sec: float = 2.0) -> bool:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
@@ -201,6 +230,20 @@ class RosGraph:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
             sender.sendto(
                 scene_payload(sequence=sequence, left=left, right=right),
+                ("127.0.0.1", self.udp_port),
+            )
+
+    def send_calibrated_scene(
+        self, *, sequence: int = 0, left: bool = True, right: bool = True,
+        invalid_finger: int | None = None, degenerate_palm: bool = False,
+    ) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+            sender.sendto(
+                calibrated_scene_payload(
+                    sequence=sequence, left=left, right=right,
+                    invalid_finger=invalid_finger,
+                    degenerate_palm=degenerate_palm,
+                ),
                 ("127.0.0.1", self.udp_port),
             )
 
@@ -243,5 +286,3 @@ class RosGraph:
         for node in nodes:
             node.destroy_node()
         self.executor.shutdown(timeout_sec=2.0)
-        if rclpy.ok():
-            rclpy.shutdown()

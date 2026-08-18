@@ -1,0 +1,18 @@
+# A non-hardware data-link profile.  The same real receiver and source wrapper
+# are used; hcan_provider is intentionally not defined as a selectable process.
+name: diagnostic
+commands:
+  rokoko_receiver: [ros2, run, rokoko_hand_receiver, rokoko_hand_receiver_node]
+  hand_retargeting: [bash]
+  hcan_provider: [ros2, run, omnihand_o10_hardware_adapter, omnihand_o10_hardware_provider]
+  omnihand_o10_control: [ros2, run, omnihand_o10_control, o10_control_node]
+retargeting_params: "${DEXHIT_RETARGET_PARAMS:-runs/retargeting_diag_params.yaml}"
+parameters:
+  rokoko_receiver:
+    bind_address: 0.0.0.0
+  hcan_provider:
+    o10.left.transport: hcan
+    o10.right.transport: hcan
+  omnihand_o10_control:
+    left.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    right.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]

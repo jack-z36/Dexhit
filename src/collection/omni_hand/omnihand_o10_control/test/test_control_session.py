@@ -296,6 +296,38 @@ def test_vendor_error_bit_latches_a_fault():
     assert not states[0].motion_enabled
 
 
+def test_commu_except_bit_alone_does_not_latch_a_fault():
+    # bit4 (0x10) is the vendor's HISTORICAL communication marker; per the
+    # official Agilink SDK it does not stop vendor-side control, so it must
+    # not latch a HARDWARE_ERROR fault (ADR-0005 amendment).
+    session = ControlSession(make_config())
+    init_session(session)
+    deliver_target(session)
+    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
+    effects = session.on_error_status(
+        ErrorStatusReceived(error_status(bits=(16.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)), JointSampleTime(2.5), 2.5)
+    )
+    states = [e.state for e in effects if isinstance(e, PublishControlState)]
+    assert states and not states[0].fault_latched
+    assert FaultReason.HARDWARE_ERROR not in states[0].fault_reasons
+
+
+def test_commu_except_bit_with_fatal_bit_still_latches_a_fault():
+    # commu_except (bit4) is masked, but a real fatal bit (bit0 = stalled)
+    # on the same or another joint must still latch a HARDWARE_ERROR fault.
+    session = ControlSession(make_config())
+    init_session(session)
+    deliver_target(session)
+    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
+    effects = session.on_error_status(
+        ErrorStatusReceived(error_status(bits=(17.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)), JointSampleTime(2.5), 2.5)
+    )
+    states = [e.state for e in effects if isinstance(e, PublishControlState)]
+    assert states[0].phase is Phase.FAULT
+    assert FaultReason.VENDOR_ERROR_BIT in states[0].fault_reasons
+    assert not states[0].motion_enabled
+
+
 def test_illegal_feedback_latches_a_fault():
     session = ControlSession(make_config())
     init_session(session)
@@ -388,6 +420,23 @@ def test_clear_fault_rejects_hardware_error_present():
     done = session.on_clear_fault_error_query(True, (1, 0, 0, 0, 0, 0, 0, 0, 0, 0), 3.01, JointSampleTime(3.01))
     result = single_result(done)
     assert result.result_code == ClearFaultCode.REJECTED_HARDWARE_ERROR_PRESENT
+
+
+def test_clear_fault_ignores_commu_except_bit():
+    # commu_except (bit4 = 16) is a vendor-historical marker and must not
+    # block clear_fault: with only bit4 set, clear_fault proceeds to the
+    # active-joint read stage instead of rejecting (ADR-0005 amendment).
+    session = ControlSession(make_config())
+    init_session(session)
+    latch_fault(session)
+    session.on_clear_fault_request(OperatorClearFaultRequest(3.0, JointSampleTime(3.0)))
+    done = session.on_clear_fault_error_query(
+        True, (16, 0, 0, 0, 0, 0, 0, 0, 0, 0), 3.01, JointSampleTime(3.01)
+    )
+    effects = done
+    read_requests = [e for e in effects if isinstance(e, RequestActiveJointsRead)]
+    assert read_requests, "expected clear_fault to proceed to the read stage"
+    assert not [e for e in effects if isinstance(e, OperationResult)]
 
 
 def test_clear_fault_rejects_error_query_timeout():

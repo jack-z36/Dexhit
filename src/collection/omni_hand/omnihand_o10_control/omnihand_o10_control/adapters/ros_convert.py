@@ -17,6 +17,7 @@ from std_msgs.msg import Int16MultiArray
 
 from omnihand_o10_contracts import (
     ACTIVE_JOINT_COUNT,
+    ACTIVE_JOINT_NAMES,
     JointError,
     JointFeedback,
     JointSampleTime,
@@ -198,6 +199,10 @@ def build_command_message(command) -> JointState:
     """
     result = JointState()
     result.header.stamp = sample_time_to_ros_time(command.stamp)
+    # The vendor provider validates the fixed active-joint order on the wire
+    # (command name must use the fixed O10 active-joint order); carry it so the
+    # final command is accepted downstream.
+    result.name = list(ACTIVE_JOINT_NAMES)
     result.position = [float(value) for value in command.values]
     return result
 

@@ -80,6 +80,18 @@ ros2 launch omnihand_o10_control o10_bringup.launch.py \
   config_file:=/absolute/path/to/omnihand_2025_node.yaml
 ```
 
+当前工作站的 Rokoko → 重定向 → HCAN Provider → O10 控制整链路可使用一键脚本启动：
+
+```bash
+bash src/collection/omni_hand/rokoko_omnihand_bringup/scripts/start_omnihand_control.sh
+```
+
+脚本会按顺序启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点，检查
+ROS 图和 HCAN 设备，并把各节点日志写入 `/tmp/omnihand-control-<timestamp>/`。
+脚本**不会调用任何 `arm` Service**，因此控制节点启动后仍保持 `disarmed`；按
+`Ctrl+C` 会停止本次脚本启动的全部子节点。真实动作前仍须人工确认
+`/o10_control/left/state` 的反馈、错误和安全状态，再单独调用对应侧的 `arm`。
+
 默认官方配置将左手绑定到 `can0`、右手绑定到 `can1`。真实设备的接口、设备 ID 和通信参数必须在官方 YAML 中配置。
 
 ### ROS 2 接口

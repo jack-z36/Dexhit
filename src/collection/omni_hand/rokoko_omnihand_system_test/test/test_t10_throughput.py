@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import statistics
 import time
+import json
+import os
 
 import pytest
 
@@ -55,3 +57,47 @@ def test_udp_to_raw_throughput_and_receive_age_are_recorded(graph):
         "ik_duration": "not measured: model/Pinocchio prerequisite is external",
     }
     print("T10_THROUGHPUT " + repr(result))
+
+
+def test_calibrated_dual_side_throughput_is_observed(graph):
+    samples = []
+    sequence = 600
+    for replay in range(3):
+        start = {side: len(graph.raw_frames[side]) for side in ("left", "right")}
+        command_start = {side: len(graph.soft_commands[side]) for side in ("left", "right")}
+        began = time.perf_counter()
+        for current in range(sequence, sequence + 40):
+            graph.send_calibrated_scene(sequence=current)
+            assert graph.spin_until(
+                lambda: len(graph.raw_frames["left"]) >= start["left"] + (current - sequence + 1)
+                and len(graph.raw_frames["right"]) >= start["right"] + (current - sequence + 1)
+            )
+        elapsed = time.perf_counter() - began
+        samples.append({
+            "replay": replay + 1,
+            "dual_side_p1_count": sum(
+                len(graph.raw_frames[side]) - start[side] for side in ("left", "right")
+            ),
+            "dual_side_p3_count": sum(
+                len(graph.soft_commands[side]) - command_start[side]
+                for side in ("left", "right")
+            ),
+            "throughput_hz": 80.0 / elapsed,
+        })
+        sequence += 100
+    values = [sample["throughput_hz"] for sample in samples]
+    result = {
+        "metric": "calibrated_dual_side_public_replay",
+        "replays": samples,
+        "throughput_hz": {
+            "p50": statistics.median(values),
+            "p95": sorted(values)[min(2, len(values) - 1)],
+            "p99": sorted(values)[-1],
+        },
+    }
+    assert all(sample["dual_side_p3_count"] > 0 for sample in samples)
+    artifact_dir = os.environ.get("TASK006_ARTIFACT_DIR")
+    if artifact_dir:
+        os.makedirs(artifact_dir, exist_ok=True)
+        with open(os.path.join(artifact_dir, "throughput_metrics.json"), "w", encoding="utf-8") as stream:
+            json.dump(result, stream, indent=2)

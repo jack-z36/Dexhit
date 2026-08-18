@@ -1,4 +1,4 @@
-# acceptance-testing 四角色模型分配（唯一权威）
+# acceptance-testing 五角色模型分配（唯一权威）
 #
 # 编排者（Main Agent）每次派发 Subagent 前必须读取本文件，把对应角色的
 # model 与 reasoning_effort 显式写入 spawn 参数（Codex spawn_agent /
@@ -17,16 +17,20 @@ model = "gpt-5.6-luna"
 reasoning_effort = "medium"
 
 [analyst]
-model = "gpt-5.6-sol"
+model = "deepseek/deepseek-v4-pro"
 reasoning_effort = "high"
 
 [solution_planner]
-model = "gpt-5.6-sol"
+model = "zai/glm-5.3"
 reasoning_effort = "high"
 
 [executor]
 model = "gpt-5.6-luna"
 reasoning_effort = "medium"
+
+[reviewer]
+model = "gpt-5.6-luna"
+reasoning_effort = "high"
 
 # 兜底：模型不在目录、不支持或派发失败时使用，并记录到 run manifest。
 [fallback]

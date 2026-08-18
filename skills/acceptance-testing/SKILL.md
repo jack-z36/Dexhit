@@ -5,7 +5,7 @@ description: "对已完成第一版开发的程序执行基于真实运行证据
 
 # Acceptance Testing（AI 验收测试工作流）
 
-本 Skill 是项目专用验收 Multi-Agent Workflow 的唯一主入口。它教 Main Agent（编排者）**什么时候调用哪个 Subagent、如何在四个 Subagent 之间传递信息**，而不是让编排者自己代替它们完成核心工作。
+本 Skill 是项目专用验收 Multi-Agent Workflow 的唯一主入口。它教 Main Agent（编排者）**什么时候调用哪个 Subagent、如何在五个 Subagent 之间传递信息**，而不是让编排者自己代替它们完成核心工作。
 
 > **第一版程序开发完成后，由 AI 运行真实程序、采集客观运行证据、分析理想状态与现实状态的差异、定位原因、制定优化方案并执行修复，随后重新进入验收循环。**
 
@@ -16,10 +16,11 @@ Experiment    = What happened?
 Analysis      = Why did it happen?
 Solution      = What should change?
 Execution     = Make the requested change.
+Review        = Did each executed task meet its own goal?
 Revalidation  = Did reality now match the expected state?
 ```
 
-四者职责不得混合。以下等式不成立：
+五者职责不得混合。以下等式不成立：
 
 ```text
 没有测试 ≠ PASS
@@ -31,13 +32,21 @@ Solution ≠ Implementation
 Implementation ≠ Verified Fix
 ```
 
-## 2. 与已有 Skill 的关系（不重叠）
+## 2. 与已有 Skill 的联动（各角色正式绑定）
 
-- `/dispatch-tickets`：派发纪律与上下文切片方法复用（`fork_context=false`、message 自包含、必填回复契约）；本 Skill 的 Execution Agent 单任务内部遵守 `/implement` + `/tdd`。
-- `/code-review`：验收流程结束后可选的集成代码审查门禁，不是验收本身。
-- `/diagnosing-bugs`：面向单个 bug 的调试循环；本 Skill 的 Analysis Agent 借用其"可证伪假设 + 证据不足不许猜"方法，但覆盖范围是整条验收数据流。
-- `/to-spec`、`/to-tickets`：上游；本 Skill 不重新定义需求、不重新拆票。
-- 不重复创建任何新角色类 Skill：四个 Subagent 的角色契约都在本 Skill 目录内。
+各 Subagent 承担的职责若有适配的仓库 Skill，派发时必须在 prompt 中给出其 `SKILL.md` 路径并指示先读再干（子代理通过读文件遵循其方法论）；没有适配的 Skill 就明确写"无"，不硬凑：
+
+| 角色 | 绑定 Skill | 用法 |
+| --- | --- | --- |
+| Experiment Agent | 无直接适配 | 遵守本 Skill 的证据纪律（§4.1） |
+| Analysis Agent | `skills/diagnosing-bugs/SKILL.md` | 采用其"3–5 个可证伪假设 + 证据不足必须明说"的方法；不引入其单 bug 调试循环的其余部分 |
+| Solution Agent | `skills/to-tickets/SKILL.md` | Micro Task 结构与验收 checkbox 沿用其 tracer-bullet 票模板 |
+| Solution Agent（涉接口/seam 设计时） | `skills/codebase-design/SKILL.md` | 方案触及模块接口深化时读 |
+| Execution Agent | `skills/implement/SKILL.md`、`skills/tdd/SKILL.md` | 单任务实现纪律；在预定 seam 处 red-green |
+| Execution Reviewer | `skills/code-review/SKILL.md` | 采用其 Standards/Spec 双轴审查方法，范围限本 task 的 diff |
+| 编排者（终局门禁） | `skills/code-review/SKILL.md` | 验收 run 结束后对累计 diff 的集成审查（可选但推荐） |
+
+边界：`/to-spec` 上游（本 Skill 不重新定义需求）；`/dispatch-tickets` 是通用 ticket 并行层（本 Skill 的派发纪律来源，但不替代本工作流）；不重复创建新角色类 Skill——五个 Subagent 的角色契约都在本 Skill 目录内。
 
 ## 3. 状态机
 
@@ -45,29 +54,38 @@ Implementation ≠ Verified Fix
 Human Acceptance Goal
         │
         ▼
-PLANNING ──────────────┐
-        │              │（编排者建 run、manifest、首个 Experiment Request）
-        ▼              │
-EXPERIMENTING          │
-        │              │
-        ▼              │
-ANALYZING ─────────────┤
-        │              │
-        ├─ 证据不足 ──► NEED_MORE_EVIDENCE ──►（新 Experiment Request）──► EXPERIMENTING（≤3 轮）
-        │              │
+PLANNING（建 run、manifest、把验收目标转为实验需求）
+        │
+        ▼
+EXPERIMENT_DESIGNING ⇄ 人类（硬件实验：多轮共同设计；软件实验：生成结构化方案）
+        │
+        ▼
+WAITING_HUMAN_EXPERIMENT_REVIEW（实验方案必经人类审核）
+        │ 批准
+        ▼
+EXPERIMENTING（严格执行已批准方案，偏离即 BLOCKED）
+        │
+        ▼
+ANALYZING ──────────────────────────────┐
+        │                               │
+        ├─ 证据不足 ──► NEED_MORE_EVIDENCE ──► 回 EXPERIMENT_DESIGNING（≤3 轮）
+        │                               │
         ├─ 无缺陷 ────► VERIFIED_PASS（终局）
-        │              │
-        ▼              │
-ROOT_CAUSE_CONFIRMED   │
-        │              │
-        ▼              │
-SOLUTION_PLANNING      │
-        │              │
-        ▼              │
-EXECUTING ─────────────┤（每 task 一个 Execution Agent，单 task 修复 ≤3 轮）
-        │              │
-        ▼              │
-REVALIDATING ──────────┘（强制重新 EXPERIMENTING → ANALYZING；整循环 ≤3 次，超限人工）
+        │ 证据充分                      │
+        ▼                               │
+ROOT_CAUSE_CONFIRMED                    │
+        │                               │
+        ▼                               │
+SOLUTION_PLANNING（必须含 Goal Definition + Success Evaluation）
+        │                               │
+        ▼                               │
+WAITING_HUMAN_SOLUTION_REVIEW（方案必经人类审核，批准才执行）
+        │ 批准                          │
+        ▼                               │
+EXECUTING（每 task：Execution Agent 施工 → Execution Reviewer 审查；FAIL 修复 ≤3 轮）
+        │                               │
+        ▼                               │
+REVALIDATING（重新走 EXPERIMENT_DESIGNING → 审核 → EXPERIMENTING → ANALYZING；整循环 ≤3 次）
         │
         ├─ 通过 ──► VERIFIED_PASS ──► FINAL_REPORT
         └─ 失败 ──► VERIFIED_FAIL ──► FINAL_REPORT（或回 SOLUTION_PLANNING 重新设计）
@@ -77,14 +95,17 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 
 | 状态 | 含义 | 进入条件 | 离开条件 |
 | --- | --- | --- | --- |
-| PLANNING | 编排者读取上下文、创建 run 目录与 manifest、把验收目标转成第一个 Experiment Request | 工作流启动 | 首个 request 校验通过 → EXPERIMENTING |
-| EXPERIMENTING | Experiment Agent 执行实验并产出 Raw Experiment Report | 收到 Experiment Request | raw-report 通过编排者校验 → ANALYZING |
+| PLANNING | 编排者读取上下文、创建 run 目录与 manifest、把验收目标转成实验需求 | 工作流启动 | 实验需求明确 → EXPERIMENT_DESIGNING |
+| EXPERIMENT_DESIGNING | 生成实验方案（Experiment Request 草案）。硬件实验（C 档/真实设备/真实抓包）必须与用户多轮共同设计；纯软件实验可自主生成结构化方案，但仍需审核 | PLANNING / NEED_MORE_EVIDENCE / REVALIDATING | 草案结构完整 → WAITING_HUMAN_EXPERIMENT_REVIEW |
+| WAITING_HUMAN_EXPERIMENT_REVIEW | 实验方案呈报用户审核（每次实验必经，无例外） | 草案完成 | 用户批准（request.md 的 Human Approval 节签署）→ EXPERIMENTING；否决 → 回 EXPERIMENT_DESIGNING |
+| EXPERIMENTING | Experiment Agent 执行**已批准**的实验方案并产出 Raw Experiment Report | 收到已批准的 Experiment Request | raw-report 通过编排者校验 → ANALYZING；方案无法按原样执行 → BLOCKED（回人类） |
 | ANALYZING | Analysis Agent 对照 Spec 预期沿数据流找 First Divergence | 本次分析所需 raw-report 全部到齐 | 证据不足 → NEED_MORE_EVIDENCE；确认缺陷 → ROOT_CAUSE_CONFIRMED；无缺陷且全部预期复验 → VERIFIED_PASS |
-| NEED_MORE_EVIDENCE | Analysis 生成补充 Experiment Request（明确要什么数据、在哪观察、施加什么刺激、为什么、能区分哪些 competing hypotheses） | Analysis 判定证据不足 | 新 request 校验通过 → EXPERIMENTING |
+| NEED_MORE_EVIDENCE | Analysis 生成补充实验需求（明确要什么数据、在哪观察、施加什么刺激、为什么、能区分哪些 competing hypotheses） | Analysis 判定证据不足 | 新方案走 EXPERIMENT_DESIGNING → 审核（补充实验同样必经人类审核） |
 | ROOT_CAUSE_CONFIRMED | Investigation Report 通过编排者校验（FACT/INFERENCE/HYPOTHESIS 严格区分、每条结论有 evidence 引用） | Analysis 证据充分 | → SOLUTION_PLANNING |
-| SOLUTION_PLANNING | Solution Agent 产出 Solution Proposal 与 Micro Tasks | Investigation Report 通过 | 方案与 tasks 校验通过 → EXECUTING |
-| EXECUTING | 逐 task 派发 Execution Agent；每 task 最多 3 轮 execute-review | tasks 批准 | 全部 task 完成（含 BLOCKED 记录）→ REVALIDATING |
-| REVALIDATING | 强制重新进入 EXPERIMENTING → ANALYZING，对修复后的现实重新验收 | 全部 task 完成 | 复验通过 → VERIFIED_PASS；复验失败且循环未耗尽 → SOLUTION_PLANNING；耗尽 → 人工 checkpoint |
+| SOLUTION_PLANNING | Solution Agent 产出方案与 Micro Tasks，必须先写清 Goal Definition（最终目标，可观测可判定）与 Success Evaluation（如何评估改动已达成目标） | Investigation Report 通过 | 方案与 tasks 完整 → WAITING_HUMAN_SOLUTION_REVIEW |
+| WAITING_HUMAN_SOLUTION_REVIEW | 方案 + 任务清单 + 目标与评估方式呈报用户审核 | 方案完成 | 用户批准 → EXECUTING；否决/修改意见 → 回 SOLUTION_PLANNING |
+| EXECUTING | 逐 task：Execution Agent 施工 → **Execution Reviewer 审查**（逐条 Acceptance Criteria）；FAIL 重新派发修复轮 | 方案获人类批准 | 全部 task 完成（含 BLOCKED 记录）→ REVALIDATING；单 task 3 轮 FAIL → 人工 checkpoint |
+| REVALIDATING | 强制重新走实验设计与审核，对修复后的现实重新验收 | 全部 task 完成且通过审查 | 复验通过 → VERIFIED_PASS；复验失败且循环未耗尽 → SOLUTION_PLANNING；耗尽 → 人工 checkpoint |
 | VERIFIED_PASS | 理想状态与复验后现实一致 | REVALIDATING 通过 | → FINAL_REPORT |
 | VERIFIED_FAIL | 确认 divergence 且修复循环耗尽仍未复验通过 | REVALIDATING 失败且循环耗尽 | → FINAL_REPORT |
 | NOT_VERIFIED / EVIDENCE_INSUFFICIENT / BLOCKED / OUT_OF_SCOPE | 见 §12 终态定义 | 对应停止条件 | → FINAL_REPORT |
@@ -92,10 +113,10 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 循环预算（硬上限，超限即停并人工 checkpoint）：
 
 1. 每次 ANALYZING 的补充实验 ≤ **3 轮**；
-2. 每个 Micro Task 的 execute-review ≤ **3 轮**；
+2. 每个 Micro Task 的 execute-review 修复轮 ≤ **3 轮**；
 3. 整条 SOLUTION → EXECUTION → REVALIDATING 失败循环 ≤ **3 次**。
 
-## 4. 四个 Subagent 角色与 I/O 契约
+## 4. 五个 Subagent 角色与 I/O 契约
 
 完整派发 prompt 模板见 `skills/acceptance-testing/references/agent-roles.md`；报告模板见 `skills/acceptance-testing/references/report-templates.md`。以下为不可协商契约：
 
@@ -103,10 +124,11 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 
 只回答 **What happened**。负责：运行程序、施加输入、采集数据、记录环境、保存 Evidence。
 
-- 输入：`runs/acceptance/<run-id>/experiments/EXP-nnn/request.md`（Experiment Request）。
+- 输入：`runs/acceptance/<run-id>/experiments/EXP-nnn/request.md`（**已经人类审核批准**的 Experiment Request，Human Approval 节已签署）。
 - 输出：`.../EXP-nnn/raw-report.md`（Raw Experiment Report）+ `.../EXP-nnn/artifacts/` 原始采集物。
 - 允许：执行测试与采集命令（ROS 节点、topic echo、bag record、colcon test），写入 `runs/acceptance/<run-id>/` 与系统临时目录。
 - 禁止：修改任何生产代码（`src/`、`DOCS/`、`skills/`、测试源码）；提出解决方案；猜测 Root Cause；挑选证据支持自己的观点；把缺失信息解释为正常；把"没观察到"解释为"不存在"；因果或意图判断。
+- **已批准方案即契约**：执行中发现方案无法按原样进行（环境不符、步骤矛盾、需要偏离）→ 停止并返回 BLOCKED，等待人类修改方案；不得自行变更实验方案。
 
 允许的报告语句：`14.25 秒以后未观察到新的 command`、`solver_result = -5`、`phase 在 21.3 秒时从 PHASE_LENGTH_COLLECTING 进入 PHASE_WAITING_FIRST_VALID_IK`。
 禁止的报告语句（除非是程序公开输出的原始字符串）：`stale 逻辑出现 Bug`、`IK 求解器失败`、`原因应该是……`。
@@ -126,7 +148,11 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 
 - 输入：Investigation Report、当前代码库、ARCHITECTURE、ADR、相关约束与 Skill。
 - 输出：`.../solution/solution.md`（Solution Proposal）+ `.../solution/tasks/TASK-nnn.md`（Micro Tasks）。
+- solution.md 必须首先写清两节（人类审核的重点，缺一即被编排者拒收）：
+  - **Goal Definition**：最终需要达成的目标——可观测、可判定的达成标准，不含实现方式；
+  - **Success Evaluation**：如何评估改动已经达成目标——对应哪些探针点（P0–P6）、修复后要跑什么复验实验、预期观察到什么。
 - Micro Task 要求：单一目标、范围小到一个 Agent Context 可完成、明确 Allowed/Forbidden Scope、明确输入输出、明确完成条件与验证方式。
+- 输出完成后**必须**经 WAITING_HUMAN_SOLUTION_REVIEW 人类审核批准，才允许进入 EXECUTING。
 - 禁止：在没有证据的情况下重新定义 Root Cause；偷偷扩大功能 Scope；把大型模糊工作扔给 Executor；直接修改生产代码。
 
 ### 4.4 Execution Agent（施工）
@@ -138,6 +164,25 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 - 输出：`.../execution/TASK-nnn-report.md`（Execution Report）。
 - 遇到 Task 矛盾、架构冲突、缺少关键输入、Scope 无法满足 → 停止并返回 **BLOCKED**，不得自行重新设计方案。
 - 禁止：擅自扩大修改范围；顺手重构无关模块；重新解释 Root Cause；宣称整个问题已解决；宣称验收 PASS。最多只能说 "Micro Task implemented successfully."，然后系统必须重新进入 Experiment Agent。
+- 你的 Execution Report 将交给 Execution Reviewer（§4.5）逐条审查，报告必须如实记录命令与结果。
+
+### 4.5 Execution Reviewer（执行审核）
+
+只做一件事：**逐条核对每个 Micro Task 的执行结果是否真的达成了它的目标**。不施工、不重设计。
+
+- 输入：`solution/tasks/TASK-nnn.md` + `execution/TASK-nnn-report.md` + 本次 task 的改动范围（changed files / diff）+ 相关 ARCHITECTURE 不变量。
+- 审查内容：
+  1. 逐条核对 task 的 Acceptance Criteria 是否达成；
+  2. Verification Command 是否真实运行且结果如实记录（开发者级验证不可只有声明）；
+  3. 改动是否越出 Allowed Scope（越权即 FAIL）；
+  4. 改动是否符合 ARCHITECTURE 不变量与仓库规范（采用 `skills/code-review/SKILL.md` 的 Standards/Spec 双轴方法，范围限本 task）。
+- 输出：`execution/TASK-nnn-review.md`，单一裁决四态（沿用 `/dispatch-tickets` 的 reviewer 契约）：
+  - `PASS`：全部 criteria 达成且无越权；
+  - `FAIL`：附具体修复请求（哪条 criteria 未达成、缺什么证据）；
+  - `BLOCKED_ENV`：环境缺依赖（ROS、SDK、模型资产），非通过非失败；
+  - `BLOCKED_HARDWARE_EXPECTED`：task 需要真机而当前无真机——禁止在没有硬件时宣称硬件相关行为通过。
+- 禁止：修改任何文件；自行修复发现的问题；宣称验收 PASS（只裁这一个 task）；重新定义 Root Cause。
+- 裁决处理（编排者）：PASS → 下一个 task；FAIL → 修复轮 +1，重新派发新 Execution Agent 实例（message 携带 review 反馈；原实例已自然结束，不违反禁止阻断规则）；BLOCKED_ENV / BLOCKED_HARDWARE_EXPECTED → 记录并跳过该 task 的验证、写入 Not Verified；单 task 3 轮 FAIL → 人工 checkpoint。
 
 ## 5. Dispatch 规则（编排者）
 
@@ -148,6 +193,9 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 5. 子代理不得自行派生子代理（"You Do Not Dispatch Subagents"）——编排者是唯一派发者。
 6. 子代理的完整报告必须落盘到约定文件；回传给编排者的消息只允许摘要（状态、文件路径、关键结果、异常项），避免上下文污染。
 7. **禁止阻断子代理**：子代理一旦派发，编排者不得以任何方式中断、强杀、取消或跳过正在执行的子代理——包括但不限于 `interrupt=true`、`close_agent`、`terminate`、强制超时切断。编排者只能用 `wait_agent`（事件订阅，有界等待）等待子代理自然完成；子代理自身遇到的 blocker 必须由它自己在 Execution Report 中声明为 BLOCKED 并停止，编排者不得替它提前中止。反馈/修改轮次通过让子代理自然结束后重新派发新实例实现（传递上一轮的 review 反馈作为新 message），而非中途插入。**唯一例外：用户（人类）明确指示编排者中断某个正在执行的子代理。**
+8. **人类审核关卡（实验方案，每次实验必经）**：EXPERIMENTING 之前，request.md 必须呈报用户审核。硬件相关实验（C 档 harness、真实设备、真实 Rokoko 抓包）必须多轮共同设计——编排者先取得实验设计草案（可派 Experiment Agent 以"只写方案不执行"模式生成），连同关键问题清单（安全边界、设备状态、观察窗口、停止条件）一起呈给用户迭代；纯软件实验可自主生成结构化方案，一次性呈报。批准 = 签署 request.md 的 Human Approval 节（审核人/时间/意见）；否决 = 回 EXPERIMENT_DESIGNING。补充实验与复验实验同样过审，无例外。
+9. **人类审核关卡（解决方案，执行前必经）**：EXECUTING 之前，solution.md（重点是 Goal Definition 与 Success Evaluation 两节）+ Micro Task 清单必须呈报用户审核。批准 = 签署 solution.md 的 Human Approval 节；修改意见 = 回 SOLUTION_PLANNING。未批准的方案不得派发任何 Execution Agent。
+10. **Execution Reviewer 派发**：每个 task 的 Execution Agent 自然结束后，必须派发 Execution Reviewer（只读，模型按 `config/agent-models.toml` 的 `[reviewer]`）做四态裁决（§4.5）。FAIL → 携带 review 反馈重新派发新执行者实例（≤3 轮）；3 轮 FAIL → 人工 checkpoint。Reviewer 与 Executor 不得是同一实例。
 
 ## 6. 模型与权限分配
 
@@ -161,8 +209,9 @@ REVALIDATING ──────────┘（强制重新 EXPERIMENTING → 
 | --- | --- | --- | --- | --- |
 | Experiment Agent | `gpt-5.6-luna` | medium | 只写 `runs/acceptance/<run-id>/` 与临时目录 | 大量工具调用、中等推理 |
 | Analysis Agent | `gpt-5.6-sol` | high | 只读代码；只写 `runs/` 下的报告 | 最强推理 |
-| Solution Agent | `gpt-5.6-luna` | high | 只读代码；只写 `runs/` 下的方案 | 架构理解与任务拆分 |
-| Execution Agent | `gpt-5.4` | high | 可修改代码但严格限 task 范围 | 中档高性价比实施 |
+| Solution Agent | `gpt-5.6-sol` | high | 只读代码；只写 `runs/` 下的方案 | 架构理解与任务拆分 |
+| Execution Agent | `gpt-5.6-luna` | medium | 可修改代码但严格限 task 范围 | 方案已明确，性价比实施 |
+| Execution Reviewer | `gpt-5.6-luna` | high | 只读；只写 `runs/` 下的审查报告 | 逐条核对 task 达成情况 |
 
 `agents/codex-roles/*.md` 的 frontmatter `model` 必须与本文件保持一致（`check-models` 会校验），两者是"安装时快捷值"与"运行时唯一权威"的关系。
 
@@ -208,6 +257,7 @@ runs/acceptance/<run-id>/            # 不进 Git
 │   ├── solution.md
 │   └── tasks/TASK-nnn.md
 ├── execution/TASK-nnn-report.md
+├── execution/TASK-nnn-review.md
 └── final-report.md
 ```
 
@@ -226,9 +276,12 @@ runs/acceptance/<run-id>/            # 不进 Git
 | --- | --- | --- |
 | Experiment 越权判断 | raw-report 出现因果/意图/方案语句（"原因是/应该是/fail 了/有 bug"等，非程序原始字符串） | 退回重写为纯 Evidence |
 | Experiment 越权修改 | 声称或实际修改了 `src/`、测试、DOCS、skills | 立即停止流程，人工处理 |
-| Analysis 无证据 | 结论没有 evidence 引用，或 evidence 不足以区分假设就下结论，或直接跳到方案 | 拒收，退回补充实验或重写 |
-| Solution 无支撑 | 方案不基于 Investigation Report，或 Micro Task 超过单上下文 | 退回重新拆分 |
+| Experiment 擅改方案 | 未按已批准 request.md 执行、自行变更实验方案 | 退回，方案问题回人类 |
+| Analysis 无证据 | 结论没有 evidence 引用，或证据不足以区分假设就下结论，或直接跳到方案 | 拒收，退回补充实验或重写 |
+| Solution 无支撑 | 方案不基于 Investigation Report，或 Micro Task 超过单上下文，或缺 Goal Definition / Success Evaluation | 退回重新拆分/补写 |
 | Execution 越权 | 修改超出 task 范围，或宣称问题已解决 / 验收 PASS | 停止流程 |
+| Reviewer 越权 | 修改任何文件、自行修复问题、裁决超出单 task 范围（宣称验收 PASS） | 停止流程，人工处理 |
+| 绕过人类审核关卡 | 未经 Human Approval 签署就派发实验执行或方案执行 | 停止流程，回对应审核关卡 |
 | 子代理派生子代理 | 任何子代理自行 spawn | 视为违规，编排者接管 |
 
 ## 10. 循环与终止
@@ -243,11 +296,18 @@ runs/acceptance/<run-id>/            # 不进 Git
   6. OUT_OF_SCOPE（验收目标超出项目当前范围，记录并建议转 issue tracker）；
   7. 循环预算超限（§3 三条硬上限）→ 人工 checkpoint。
 
-## 11. 人工 Checkpoint（必须停下向用户汇报并等待指示）
+## 11. 人工交互（审核关卡与条件 Checkpoint）
 
-- 实验需要真机、生产 Provider、外部 SDK（Agilink）、真实 Rokoko 抓包验证；
+**标准审核关卡（每次必经，不可跳过）：**
+
+1. **实验方案审核**（WAITING_HUMAN_EXPERIMENT_REVIEW）：每次实验（首实验、补充实验、复验实验）的 request.md 必经用户批准；硬件实验必须多轮共同设计（见 §5 第 8 条）。
+2. **解决方案审核**（WAITING_HUMAN_SOLUTION_REVIEW）：solution.md（Goal Definition + Success Evaluation）与 Micro Task 清单必须经用户批准后才执行（见 §5 第 9 条）。
+
+**条件 Checkpoint（满足条件时停下汇报并等待指示）：**
+
+- 实验需要真机、生产 Provider、外部 SDK（Agilink）、真实 Rokoko 抓包验证（这些同时强制走共同设计协议）；
 - 需要破坏性操作或不可逆操作（删除、覆盖原始数据）；
-- 循环预算耗尽；
+- 循环预算耗尽（补充实验 3 轮 / task 修复 3 轮 / 整循环 3 次）；
 - Spec 预期与现实矛盾，需要修改预期（Agent 不得私自改 Spec）；
 - 需要 git 写操作（commit / push / 分支）；
 - 需要启用跨 Provider 子代理委派。
@@ -263,19 +323,20 @@ runs/acceptance/<run-id>/            # 不进 Git
 
 ## 13. 最终报告（编排者必须产出）
 
-FINAL_REPORT 至少包含：验收目标；状态机经过的完整路径；每个实验的 ID/目标/结论；Investigation 摘要（First Divergence、Root Cause、置信度）；方案与任务清单及各自状态；复验结果；剩余未验证项；人工 checkpoint 记录；终态。
+FINAL_REPORT 至少包含：验收目标；状态机经过的完整路径；每个实验的 ID/目标/结论（含 Human Approval 记录）；Investigation 摘要（First Divergence、Root Cause、置信度）；方案与任务清单及各自状态（含 Execution Reviewer 裁决）；复验结果；剩余未验证项；人工关卡与 checkpoint 记录；终态。
 
 ## 14. 启动第一次 Acceptance Run
 
 1. 从 `DOCS/03_工程/00_当前状态.md` 的「外部阻断与未验证」或用户指定目标中确定验收目标；
 2. 按 `编程执行规则` §2 加载上下文（AGENTS.md → 编程执行规则 → Spec → ARCHITECTURE → 当前状态 → 本 Skill）；
 3. `python skills/acceptance-testing/scripts/acceptance_run.py init <run-id> --goal "<验收目标>"`；
-4. 进入 PLANNING → EXPERIMENTING 状态机（§3），按 §5 派发、§9 校验、§10 循环；
+4. 进入 PLANNING → EXPERIMENT_DESIGNING →（人类审核）→ EXPERIMENTING → … 状态机（§3）；按 §5 派发（含两道人类审核关卡与 Reviewer 派发）、§9 校验、§10 循环；
 5. 产出 final-report.md，按 §8 决定是否更新 `DOCS/03_工程/`。
 
 ## 15. What this skill must NOT do
 
-- 代替四个 Subagent 完成它们的核心工作（编排者只做状态管理、派发、上下文打包、输出验证、产物路由、循环控制、人工 checkpoint、最终报告）。
+- 代替五个 Subagent 完成它们的核心工作（编排者只做状态管理、派发、上下文打包、输出验证、产物路由、循环控制、人工关卡呈报、最终报告）。
+- 跳过或代签任何人类审核关卡：未经用户批准的实验方案不得执行，未经用户批准的解决方案不得派发施工。
 - 在证据不足时得出结论、在未复验时宣称 PASS。
 - 修改 Spec、ARCHITECTURE、ADR 或验收目标本身。
 - 覆盖 `编程执行规则` 的 Git 安全（§13）与生成物隔离（§12）规则。
