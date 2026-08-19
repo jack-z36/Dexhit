@@ -7,12 +7,45 @@ commands:
   hcan_provider: [ros2, run, omnihand_o10_hardware_adapter, omnihand_o10_hardware_provider]
   omnihand_o10_control: [ros2, run, omnihand_o10_control, o10_control_node]
 retargeting_params: "${DEXHIT_RETARGET_PARAMS:-runs/retargeting_diag_params.yaml}"
+env:
+  DEXHIT_COLLECTION_PREFIX: /home/hit/miniforge3/envs/dexhit_collection
+  OMNIHAND_O10_MODEL_FIXTURE: /home/hit/dexhit-external/omnihand_o10_fixture-f4fd0d913c2151bcb4be0d29fbc02761b9638009
 parameters:
   rokoko_receiver:
     bind_address: 0.0.0.0
+  hand_retargeting:
+    recovery_confirmation_timeout_sec: 0.5
   hcan_provider:
     o10.left.transport: hcan
     o10.right.transport: hcan
   omnihand_o10_control:
     left.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    left.max_time_credit: 0.1
+    left.slew_compare_epsilon: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
+    left.target_input_stale_timeout: 2.0
+    left.target_receive_stale_timeout: 2.0
+    left.control_check_period: 0.05
+    left.error_poll_period: 0.2
+    left.error_query_timeout: 0.5
+    left.command_readback_timeout: 2.0
+    left.provider_heartbeat_timeout: 3.0
+    left.init_read_retry_period: 0.1
+    left.init_error_retry_period: 0.1
+    left.read_service_timeout: 1.0
+    left.clear_fault_error_timeout: 1.0
+    left.clear_fault_read_timeout: 1.0
     right.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    right.max_time_credit: 0.1
+    right.slew_compare_epsilon: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
+    right.target_input_stale_timeout: 2.0
+    right.target_receive_stale_timeout: 2.0
+    right.control_check_period: 0.05
+    right.error_poll_period: 0.2
+    right.error_query_timeout: 0.5
+    right.command_readback_timeout: 2.0
+    right.provider_heartbeat_timeout: 3.0
+    right.init_read_retry_period: 0.1
+    right.init_error_retry_period: 0.1
+    right.read_service_timeout: 1.0
+    right.clear_fault_error_timeout: 1.0
+    right.clear_fault_read_timeout: 1.0

@@ -1,5 +1,6 @@
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -143,3 +144,38 @@ def test_spawn_calls_pdeathsig_after_session_setup(tmp_path):
     finally:
         stop_process_group(process.pid, process, 0.5, 0.5)
     assert marker.read_text() == f"{process.pid}:{process.pid}"
+
+
+def test_pdeath_guard_kills_grandchildren_when_parent_dies(tmp_path):
+    """编排器死亡时 guard 必须清掉 ros2 run 派生的孙进程，不得留 ROS 图孤儿。"""
+    grandchild_pid_file = tmp_path / "grandchild.pid"
+    parent_script = (
+        "import sys, time\n"
+        "from rokoko_omnihand_launchpad.process_lifecycle import spawn_managed_process\n"
+        "guarded = [sys.executable, '-m', 'rokoko_omnihand_launchpad.pdeath_guard', '--',\n"
+        f"           sys.executable, '-c', \"import pathlib, subprocess, sys, time; "
+        f"c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        f"pathlib.Path({str(grandchild_pid_file)!r}).write_text(str(c.pid)); time.sleep(30)\"]\n"
+        f"spawn_managed_process(guarded, {str(tmp_path / 'guarded.log')!r}, pdeathsig=lambda: None)\n"
+        "time.sleep(30)\n"
+    )
+    parent = subprocess.Popen([PYTHON, "-c", parent_script], env=os.environ.copy())
+    try:
+        _wait_until(grandchild_pid_file.exists, timeout=5.0)
+        grandchild_pid = int(grandchild_pid_file.read_text())
+        os.kill(grandchild_pid, 0)  # 孙进程在父死亡前存活
+    except Exception:
+        parent.kill()
+        parent.wait()
+        raise
+    parent.kill()  # SIGKILL 编排器进程，模拟最坏退出路径
+    parent.wait()
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(grandchild_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    with pytest.raises(ProcessLookupError):
+        os.kill(grandchild_pid, 0)

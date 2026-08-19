@@ -98,3 +98,29 @@ def test_managed_cleanup_failure_on_node_start_is_http_409_and_unknown_is_404(mo
     finally:
         monkeypatch.undo()
         app.state.orchestrator.close()
+
+
+def test_start_with_empty_block_selection_is_rejected_409(tmp_path):
+    app = create_app(run_root=tmp_path)
+    try:
+        asyncio.run(request(app, "POST", "/api/config", {"blocks": [], "execution_mode": "stub"}))
+        status, result = asyncio.run(request(app, "POST", "/api/start"))
+        assert status == 409
+        assert "no blocks selected" in result["detail"]
+    finally:
+        app.state.orchestrator.close()
+
+
+def test_snapshot_validation_respects_saved_confirmation(tmp_path):
+    app = create_app(run_root=tmp_path)
+    try:
+        danger = {"blocks": ["rokoko_receiver", "synthetic_input", "hcan_provider"],
+                  "execution_mode": "stub", "confirmation": True}
+        _, configured = asyncio.run(request(app, "POST", "/api/config", danger))
+        assert configured["validation"]["valid"] is True
+        _, state = asyncio.run(request(app, "GET", "/api/state"))
+        assert state["config"]["blocks"] == danger["blocks"]
+        assert state["validation"]["valid"] is True
+        assert state["validation"]["confirmations"] and not state["validation"]["errors"]
+    finally:
+        app.state.orchestrator.close()

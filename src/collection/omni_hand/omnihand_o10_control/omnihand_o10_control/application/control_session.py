@@ -11,13 +11,11 @@ import threading
 from omnihand_o10_contracts import ACTIVE_JOINT_COUNT, JointFeedback, JointTarget
 
 from ..contracts import (
-    ArmCode,
     ClearFaultCode,
     CommandPublishFailed,
     CommandSent,
     ControlConfig,
     ControlStateSnapshot,
-    DisarmCode,
     Effect,
     ErrorStatusReceived,
     FATAL_ERROR_BIT_MASK,
@@ -26,9 +24,7 @@ from ..contracts import (
     InvalidErrorStatusReceived,
     InvalidFeedbackReceived,
     OperationResult,
-    OperatorArmRequest,
     OperatorClearFaultRequest,
-    OperatorDisarmRequest,
     Phase,
     PublishControlState,
     QueryErrorStatus,
@@ -60,7 +56,6 @@ class ControlSession:
         self._config = config
         self._lock = threading.RLock()
         self._phase = Phase.INITIALIZING
-        self._armed = False
         self._fault_latched = False
         self._fault_reasons: set[FaultReason] = set()
         self._feedback_ready = False
@@ -208,79 +203,6 @@ class ControlSession:
             self._slew_limited = (False,) * ACTIVE_JOINT_COUNT
             return self._publish(Trigger.TARGET_PROCESSED, event.ros_now)
 
-    def on_arm_request(self, event: OperatorArmRequest) -> list[Effect]:
-        with self._lock:
-            self._observe_clock(event.monotonic_now)
-            if self._armed:
-                return self._operation(
-                    True, ArmCode.ALREADY_ARMED, "already armed", event.ros_now
-                )
-            # Fixed doc07 rejection priority.
-            if self._inconsistent():
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_CONTROL_STATE,
-                    "arm rejected: control state is inconsistent",
-                    event.ros_now,
-                )
-            if self._fault_latched:
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_FAULT_LATCHED,
-                    "arm rejected: fault is latched",
-                    event.ros_now,
-                )
-            if not self._feedback_ready:
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_FEEDBACK_NOT_READY,
-                    "arm rejected: feedback is not ready",
-                    event.ros_now,
-                )
-            if not self._error_monitor_ready:
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_ERROR_MONITOR_NOT_READY,
-                    "arm rejected: error monitor is not ready",
-                    event.ros_now,
-                )
-            if not self._target_ready:
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_TARGET_NOT_READY,
-                    "arm rejected: no valid target has been received",
-                    event.ros_now,
-                )
-            if not self._fresh_at(event.ros_now):
-                return self._operation(
-                    False,
-                    ArmCode.REJECTED_TARGET_STALE,
-                    "arm rejected: target is stale",
-                    event.ros_now,
-                )
-            self._armed = True
-            self._phase = self._phase_for(event.ros_now)
-            self._limiter.rebase_clock(event.monotonic_now)
-            self._command_pending = False
-            self._command_published = False
-            self._slew_limited = (False,) * ACTIVE_JOINT_COUNT
-            return self._operation(
-                True, ArmCode.SUCCESS, "armed", event.ros_now
-            )
-
-    def on_disarm_request(self, event: OperatorDisarmRequest) -> list[Effect]:
-        with self._lock:
-            self._observe_clock(event.monotonic_now)
-            was_armed = self._armed
-            self._armed = False
-            self._command_pending = False
-            self._command_published = False
-            self._slew_limited = (False,) * ACTIVE_JOINT_COUNT
-            if self._limiter.initialized:
-                self._limiter.clear_time_credit()
-            code = DisarmCode.SUCCESS if was_armed else DisarmCode.ALREADY_DISARMED
-            return self._operation(True, code, "disarmed", event.ros_now)
-
     def on_clear_fault_request(self, event: OperatorClearFaultRequest) -> list[Effect]:
         with self._lock:
             self._observe_clock(event.monotonic_now)
@@ -316,7 +238,6 @@ class ControlSession:
                     "clear_fault rejected: communication is unhealthy",
                     event.ros_now,
                 )
-            self._armed = False
             self._clear_fault_state = "awaiting_error"
             self._error_query_in_flight = True
             return [QueryErrorStatus()]
@@ -414,7 +335,6 @@ class ControlSession:
                 )
             self._fault_latched = False
             self._fault_reasons.clear()
-            self._armed = False
             self._feedback_ready = True
             self._error_monitor_ready = True
             self._last_heartbeat = monotonic_now
@@ -430,14 +350,14 @@ class ControlSession:
             if self._clear_fault_state != "idle":
                 return []
             now = event.monotonic_now
-            if self._armed and self._command_pending and self._last_command_monotonic is not None:
+            if self._command_pending and self._last_command_monotonic is not None:
                 if now - self._last_command_monotonic > self._config.command_readback_timeout:
                     return self._latch_fault(
                         FaultReason.COMMAND_READBACK_TIMEOUT,
                         event.ros_now,
                         now,
                     )
-            if self._armed and self._last_heartbeat is not None:
+            if self._feedback_ready and self._last_heartbeat is not None:
                 if now - self._last_heartbeat > self._config.provider_heartbeat_timeout:
                     return self._latch_fault(
                         FaultReason.COMPONENT_RESTART_OR_DISCONNECT,
@@ -535,8 +455,7 @@ class ControlSession:
 
     def _motion_enabled(self, ros_now) -> bool:
         return (
-            self._armed
-            and self._feedback_ready
+            self._feedback_ready
             and self._error_monitor_ready
             and self._target_ready
             and self._fresh_at(ros_now)
@@ -548,13 +467,11 @@ class ControlSession:
             return Phase.FAULT_LATCHED
         if not self._feedback_ready or not self._error_monitor_ready:
             return Phase.INITIALIZING
-        if self._armed and not self._fresh_at(ros_now):
-            return Phase.PAUSED_TARGET_STALE
-        if self._armed:
+        if self._fresh_at(ros_now):
             return Phase.ACTIVE
-        if self._feedback_ready and self._error_monitor_ready:
-            return Phase.DISARMED_READY
-        return Phase.DISARMED_NOT_READY
+        if self._target_ready:
+            return Phase.PAUSED_TARGET_STALE
+        return Phase.IDLE_READY
 
     def _emit_command(self, target: JointTarget, monotonic_now: float, ros_now) -> list[Effect]:
         try:
@@ -587,7 +504,6 @@ class ControlSession:
     def _latch_fault(self, reason: FaultReason, ros_now, monotonic_now) -> list[Effect]:
         self._fault_reasons.add(reason)
         self._fault_latched = True
-        self._armed = False
         self._command_pending = False
         self._command_published = False
         self._slew_limited = (False,) * ACTIVE_JOINT_COUNT
@@ -634,7 +550,6 @@ class ControlSession:
             error_monitor_ready=self._error_monitor_ready,
             target_ready=self._target_ready,
             target_fresh=self._fresh_at(ros_now),
-            armed=self._armed,
             fault_latched=self._fault_latched,
             motion_enabled=self._motion_enabled(ros_now),
             target_result=self._target_result,

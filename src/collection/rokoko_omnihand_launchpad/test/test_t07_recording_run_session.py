@@ -53,7 +53,9 @@ def test_recorder_command_seam_starts_and_stops_without_ros(tmp_path: Path) -> N
     assert recorder.running
     result = recorder.stop()
     assert result.outcome == "stopped"
-    assert result.exit_code == -15
+    # pdeath_guard 收到组 TERM 后以 128+SIGTERM=143 退出并清理子进程；
+    # guard 自身被信号终止时则为 -15。两者都是干净停机。
+    assert result.exit_code in (-15, 143)
 
 
 def test_real_recorder_reports_missing_ros2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

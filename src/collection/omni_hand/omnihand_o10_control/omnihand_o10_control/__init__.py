@@ -1,4 +1,4 @@
-"""OmniHand O10 control: per-side armed/fault-latched hard-slew control.
+"""OmniHand O10 control: per-side arm-free, fault-latched hard-slew control.
 
 Layering (ARCHITECTURE A21):
     contracts   -- pure events / effects / enums / config (single source)

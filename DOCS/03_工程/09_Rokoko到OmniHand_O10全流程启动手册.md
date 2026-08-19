@@ -56,6 +56,87 @@ bash src/collection/omni_hand/rokoko_omnihand_bringup/scripts/start_omnihand_con
 
 脚本会依次启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点；日志写入 `/tmp/omnihand-control-<timestamp>/`。保持终端 1 运行，按 `Ctrl+C` 会停止本次脚本启动的子节点。脚本不会调用任何 `arm` Service。
 
+## 仅测试左手：推荐操作顺序
+
+如果你的目标是“只让左手参与本次测试”，请按下面的规则执行：
+
+1. 仍然启动完整节点图，因为当前 Provider 会同时创建左右两个侧别；
+2. 只观察左手 Topic 和左手状态；
+3. 只调用 `/o10_control/left/arm`；
+4. 永远不要调用 `/o10_control/right/arm`；
+5. 右手出现 `read_active_joints returned 0 positions` 时，说明右手没有反馈，不要用错误的参数伪造右手；只要 Provider 进程仍在运行且左手状态满足安全条件，可以继续单独判断左手。
+
+启动一键脚本后，在终端 2 或新的终端中只检查左手：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source "$(git rev-parse --show-toplevel)/install/setup.bash"
+
+ros2 topic hz /rokoko/left/raw_hand
+```
+
+看到约 `30 Hz` 后，按 `Ctrl+C` 停止这个频率观察，再执行：
+
+```bash
+ros2 topic hz /o10_control/left/command
+```
+
+看到约 `30 Hz` 后，再开一个终端执行左手只读反馈：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source "$(git rev-parse --show-toplevel)/install/setup.bash"
+
+ros2 service call /o10/left/read_active_joints rokoko_omnihand_msgs/srv/ReadO10ActiveJoints '{}'
+```
+
+必须看到：
+
+```text
+success=True
+result_code=0
+```
+
+然后观察左手控制状态：
+
+```bash
+ros2 topic echo /o10_control/left/state
+```
+
+只有当以下字段满足条件时，才进入左手动作测试：
+
+```text
+feedback_ready: true
+error_monitor_ready: true
+target_ready: true
+target_fresh: true
+fault_latched: false
+armed: false
+motion_enabled: false
+```
+
+确认实体手周围安全后，只执行左手 arm：
+
+```bash
+ros2 service call /o10_control/left/arm rokoko_omnihand_msgs/srv/ControlOperation '{}'
+```
+
+动作测试期间继续观察左手状态：
+
+```bash
+ros2 topic echo /o10_control/left/state
+```
+
+如果看到 `fault_latched: true`、`hardware_error_bits` 非零或实体手动作异常，立即执行：
+
+```bash
+ros2 service call /o10_control/left/disarm rokoko_omnihand_msgs/srv/ControlOperation '{}'
+```
+
+然后按 `Ctrl+C` 停止启动终端。
+
+注意：当前实现还没有真正的 Provider `left_only` 模式。上面的流程是“完整启动图、只 arm 左手”，不是“只创建左手 Provider”。
+
 ## 方式 B：手动分终端启动
 
 手动方式使用 6 个终端。每个持续运行的节点终端都不要关闭。
@@ -265,4 +346,3 @@ ros2 service call /o10_control/left/disarm rokoko_omnihand_msgs/srv/ControlOpera
 | `commu_except` 或数值 `16` | 检查 O10 电源、CAN 线、通道和设备状态 |
 | `/o10/right/joint_error_cmd` 出现 `{}` | 正常的 Empty 错误查询请求 |
 | `read_active_joints returned 0 positions` | 对应侧没有读到 10 个关节反馈 |
-

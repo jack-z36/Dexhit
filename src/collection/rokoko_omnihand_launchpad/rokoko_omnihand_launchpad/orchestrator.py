@@ -41,6 +41,7 @@ BLOCKS = (
     "recorder",
 )
 SIDES = ("both", "left", "right")
+ROKOKO_UDP_PORT = 14043
 START_ORDER = (
     "rokoko_receiver",
     "synthetic_input",
@@ -116,6 +117,24 @@ def _contains_system_test(value: Any) -> bool:
 
 def _side_values(side: str) -> tuple[str, ...]:
     return ("left", "right") if side == "both" else (side,)
+
+
+def _resolve_profile_path(raw: Any) -> str:
+    """Expand a profile path entry, including bash-style ``${VAR:-default}``.
+
+    ``os.path.expandvars`` does not understand ``${VAR:-default}`` and leaves
+    the literal string in place, which previously reached ``--params-file``
+    verbatim and crashed the retargeting node at rcl init.
+    """
+    text = str(raw).strip()
+    if text.startswith("${") and text.endswith("}"):
+        inner = text[2:-1]
+        name, sep, default = inner.partition(":-")
+        if sep:
+            text = os.environ.get(name.strip()) or default.strip()
+        else:
+            text = os.environ.get(inner.strip(), "")
+    return os.path.expandvars(text)
 
 
 def _set_pdeathsig() -> None:
@@ -235,7 +254,9 @@ def preflight(
             "ros2_available": "ROS 2 command ros2 is not available",
             "numeric_import": "numeric runtime cannot import pinocchio and nlopt",
             "parameter_profile": f"parameter profile does not exist or cannot be read: {profile}",
-            "duplicate_nodes": "one or more real graph nodes are already running",
+            "duplicate_nodes": ("one or more real graph nodes are already running; "
+                                "if nodes were just stopped, wait a few seconds for "
+                                "discovery to settle and retry"),
             "usb_canfd": "HCAN selected but USB-CANFD a8fa:8598 was not detected",
         }.get(name, f"preflight check failed: {name}")
         for name, passed in results.items()
@@ -270,8 +291,12 @@ class Orchestrator:
     def __init__(self, *, command_factory: Callable[[str, dict[str, Any]], list[str]] | None = None,
                  run_root: str | os.PathLike[str] | None = None,
                  recorder_command_factory: Callable[[Any, Iterable[str]], list[str]] | None = None,
-                 term_timeout: float = 5.0, kill_timeout: float = 3.0) -> None:
+                 term_timeout: float = 5.0, kill_timeout: float = 3.0,
+                 ready_grace: float = 2.0,
+                 duplicate_settle_timeout: float = 8.0) -> None:
         self._lock = threading.RLock()
+        self._ready_grace = ready_grace
+        self._duplicate_settle_timeout = duplicate_settle_timeout
         self._nodes = {name: NodeRuntime() for name in BLOCKS}
         self._config: dict[str, Any] = {
             "blocks": [], "side": "both", "profile": "default", "label": "",
@@ -309,15 +334,20 @@ class Orchestrator:
         if name == "hand_retargeting":
             from pathlib import Path
             wrapper = Path(__file__).resolve().parents[2] / "omni_hand" / "hand_retargeting" / "scripts" / "hand_retargeting_node"
-            params = os.path.expandvars(str(profile.get("retargeting_params", "")))
+            params = _resolve_profile_path(profile.get("retargeting_params", ""))
             if params and not os.path.isabs(params):
                 params = str(Path(__file__).resolve().parents[4] / params)
             command = ["bash", str(wrapper), "--ros-args"]
             if params:
                 command += ["--params-file", str(params)]
+        else:
+            # ros2 run 命令本身不含 --ros-args；在其后追加 -p 参数必须先进入
+            # ROS 参数作用域，否则 rcl 会把 key:=value 解析成 remap，业务
+            # 必填参数全部丢失（provider/control 启动即退出的根因）。
+            command += ["--ros-args"]
         command += ["-p", f"side:={side}"]
         if name == "rokoko_receiver":
-            command += ["-p", f"udp_port:={int(options.get('udp_port', 14043))}",
+            command += ["-p", f"udp_port:={ROKOKO_UDP_PORT}",
                         "-p", f"actor_index:={int(options.get('actor', 0))}"]
         for key, value in (profile.get("parameters", {}).get(name, {}) or {}).items():
             rendered = "[" + ",".join(str(item) for item in value) + "]" if isinstance(value, list) else str(value)
@@ -332,6 +362,8 @@ class Orchestrator:
         result = validate_blocks(blocks, confirmation=bool(payload.get("confirmation")))
         if not result["valid"]:
             raise ValueError("; ".join(result["errors"]))
+        if "rokoko_receiver" in blocks and payload.get("udp_port", ROKOKO_UDP_PORT) != ROKOKO_UDP_PORT:
+            raise ValueError(f"rokoko_receiver udp_port must be {ROKOKO_UDP_PORT}")
         profile = str(payload.get("profile", "default"))
         profile_data, profile_error = _load_profile(profile)
         requested_mode = payload.get("execution_mode")
@@ -353,9 +385,10 @@ class Orchestrator:
                             "profile": profile, "label": payload.get("label", ""),
                             "template": template,
                             "mode": payload.get("mode", execution_mode),
-                            "udp_port": payload.get("udp_port", 14043), "actor": payload.get("actor", 0),
+                            "udp_port": ROKOKO_UDP_PORT, "actor": payload.get("actor", 0),
                             "can_channel": payload.get("can_channel", "can0"),
-                            "execution_mode": execution_mode}
+                            "execution_mode": execution_mode,
+                            "confirmed": bool(payload.get("confirmation"))}
             self._standins = dict(payload.get("standins", {}))
             root = self._run_root or os.environ.get("DEXHIT_LAUNCHPAD_RUN_ROOT", "runs/launchpad")
             self._session = RunSession(root, config=self._config)
@@ -431,8 +464,27 @@ class Orchestrator:
                     command = self._command_factory(name, options)
                     if name == "sim_provider" and self._config.get("execution_mode") == "sim":
                         command = sim_provider_command(side=self._config["side"])
+                    spawn_kwargs: dict[str, Any] = {}
+                    if name not in {"sim_provider", "synthetic_input"} and options.get("execution_mode") != "stub":
+                        # 真节点经 ros2 run/wrapper 派生孙进程；直接子进程挂
+                        # PDEATHSIG 只能杀到 ros2 run 一层，真节点会孤儿化并残
+                        # 留在 ROS 图里阻塞后续启动。改由 guard 作为直接子进程
+                        # 接管父死亡时的整组清理。
+                        command = [sys.executable, "-m", "rokoko_omnihand_launchpad.pdeath_guard",
+                                   "--", *command]
+                        spawn_kwargs["pdeathsig"] = lambda: None
+                    if name not in {"sim_provider", "synthetic_input", "recorder"}:
+                        # 真节点子进程继承编排器环境，并叠加档案声明的环境变量；
+                        # retargeting wrapper 的环境守卫要求这两个变量必须存在。
+                        profile_env = dict((options.get("profile_data") or {}).get("env") or {})
+                        if name == "hand_retargeting":
+                            profile_env.setdefault("DEXHIT_COLLECTION_PREFIX", sys.prefix)
+                        if profile_env:
+                            spawn_kwargs["env"] = {**os.environ, **profile_env}
+                    spawn_options: dict[str, Any] = {"pdeathsig": _set_pdeathsig}
+                    spawn_options.update(spawn_kwargs)
                     process = spawn_managed_process(command, self._session.log_path(name),
-                                                    pdeathsig=_set_pdeathsig)
+                                                    **spawn_options)
                 except SimProviderUnavailable as exc:
                     raise ValueError(str(exc)) from exc
             node.process, node.pid, node.pgid, node.actual = process, process.pid, process.pid, "starting"
@@ -484,11 +536,24 @@ class Orchestrator:
 
     def start_all(self) -> dict[str, Any]:
         selected = set(self._config["blocks"])
+        if not selected:
+            raise ValueError("no blocks selected — light at least one block before starting")
         if self._config.get("execution_mode") in {"real", "sim"}:
-            result = preflight(selected, side=self._config["side"], profile=self._config["profile"])
-            if not result["passed"]:
-                failed = "; ".join(result["reasons"][name] for name, passed in result["results"].items() if not passed)
-                raise ValueError(f"preflight rejected real-node start: {failed}")
+            # 刚停止的节点在 DDS 发现里仍会停留数十秒；当且仅当
+            # duplicate_nodes 是唯一失败项时，有界等待其清退后重试，
+            # 避免 /api/restart 被自己刚停掉的节点误拒。
+            deadline = time.monotonic() + self._duplicate_settle_timeout
+            while True:
+                result = preflight(selected, side=self._config["side"],
+                                   profile=self._config["profile"])
+                failed = {name for name, passed in result["results"].items() if not passed}
+                if not failed:
+                    break
+                if failed != {"duplicate_nodes"} or time.monotonic() >= deadline:
+                    reasons = "; ".join(result["reasons"][name] for name, passed
+                                        in result["results"].items() if not passed)
+                    raise ValueError(f"preflight rejected real-node start: {reasons}")
+                time.sleep(1.0)
         for name in START_ORDER:
             if name in selected:
                 self.start_node(name)
@@ -506,7 +571,19 @@ class Orchestrator:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            validation = validate_blocks(self._config["blocks"])
+            # starting→running 的唯一转换点：进程在宽限期内未退出即视为运行。
+            # 业务级就绪（TRACKING、fault 等）由状态监控与数据流层另行表达。
+            now = time.monotonic()
+            for name in BLOCKS:
+                node = self._nodes[name]
+                if (node.actual == "starting" and node.process is not None
+                        and node.process.poll() is None and node.started_at is not None
+                        and now - node.started_at >= self._ready_grace):
+                    node.actual = "running"
+                    if self._session:
+                        self._record_event("block_running", node=name)
+            validation = validate_blocks(self._config["blocks"],
+                                         confirmation=bool(self._config.get("confirmed")))
             events = read_events(self._session.path) if self._session else []
             return {"config": dict(self._config), "run": str(self._session.path) if self._session else None,
                     "nodes": {n: self._nodes[n].public() for n in BLOCKS},

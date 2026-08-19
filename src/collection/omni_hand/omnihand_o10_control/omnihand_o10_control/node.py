@@ -49,9 +49,7 @@ from .contracts import (
     InvalidErrorStatusReceived,
     InvalidFeedbackReceived,
     OperationResult,
-    OperatorArmRequest,
     OperatorClearFaultRequest,
-    OperatorDisarmRequest,
     PublishControlState,
     QueryErrorStatus,
     ReadActiveJointsResult,
@@ -159,11 +157,7 @@ class O10ControlNode(Node):
         self._right = self._build_side(Side.RIGHT, right_config)
         self._sides = {Side.LEFT: self._left, Side.RIGHT: self._right}
 
-        self._build_services(self._left, "arm")
-        self._build_services(self._left, "disarm")
         self._build_services(self._left, "clear_fault")
-        self._build_services(self._right, "arm")
-        self._build_services(self._right, "disarm")
         self._build_services(self._right, "clear_fault")
 
         for side in (Side.LEFT, Side.RIGHT):
@@ -280,20 +274,10 @@ class O10ControlNode(Node):
     # ------------------------------------------------------------------
 
     def _on_operation(self, runtime: _SideRuntime, operation: str, request, response):
-        mono_now = self._mono_now()
         ros_now = self._ros_now()
-        if operation == "arm":
-            effects = runtime.session.on_arm_request(
-                OperatorArmRequest(mono_now, ros_now)
-            )
-        elif operation == "disarm":
-            effects = runtime.session.on_disarm_request(
-                OperatorDisarmRequest(mono_now, ros_now)
-            )
-        else:
-            effects = runtime.session.on_clear_fault_request(
-                OperatorClearFaultRequest(mono_now, ros_now)
-            )
+        effects = runtime.session.on_clear_fault_request(
+            OperatorClearFaultRequest(self._mono_now(), ros_now)
+        )
         self._apply_effects(runtime, effects, response=response)
         return response
 

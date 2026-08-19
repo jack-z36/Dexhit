@@ -2,8 +2,9 @@
 """Fake left-hand command publisher for testing the O10 control chain.
 
 Publishes a legal ``sensor_msgs/msg/JointState`` to
-``/o10_control/left/command`` and, by default, arms the left side first so the
-control node actually forwards to the hardware topic ``/o10/left/joint_cmd``.
+``/o10_control/left/command``; publishing alone moves the hand (control
+requires the feedback / error monitor to be initialised, which happens
+automatically once the provider is running).
 
 Legal message contract (from the code, authoritative):
   * ``name`` == ACTIVE_JOINT_NAMES exactly (10 joints, fixed order).
@@ -11,14 +12,10 @@ Legal message contract (from the code, authoritative):
   * ``velocity`` and ``effort`` empty.
   * ``header.frame_id`` == "" and ``header.stamp`` set to a fresh time.
 
-NOTE: publishing alone is NOT enough to move OmniHand.  The control node keeps a
-disarmed side from forwarding to the vendor command topic.  You must arm via the
-``/o10_control/left/arm`` service first (this script does it when ``--arm``).
-
 Usage:
   source /opt/ros/jazzy/setup.bash
   source install/setup.bash
-  python3 tools/fake_left_command.py --arm --rate 10 --hold
+  python3 tools/fake_left_command.py --rate 10 --mode close
 """
 
 from __future__ import annotations
@@ -28,7 +25,6 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rokoko_omnihand_msgs.srv import ControlOperation
 from sensor_msgs.msg import JointState
 
 # Mirrors omnihand_o10_contracts.joints.ACTIVE_JOINT_NAMES (Spec decision 24).
@@ -83,35 +79,8 @@ class FakeLeftCommandNode(Node):
         # velocity and effort intentionally empty; frame_id intentionally "".
         return msg
 
-    def arm(self, timeout: float = 5.0) -> bool:
-        client = self.create_client(
-            ControlOperation, "/o10_control/left/arm"
-        )
-        if not client.wait_for_service(timeout):
-            self.get_logger().error("arm service not available")
-            return False
-        future = client.call_async(ControlOperation.Request())
-        deadline = time.monotonic() + timeout
-        while rclpy.ok() and not future.done():
-            if time.monotonic() > deadline:
-                self.get_logger().error("arm call timed out")
-                return False
-            self._spin_once()
-            time.sleep(0.05)
-        result = future.result()
-        ok = bool(result.success)
-        self.get_logger().info(
-            f"arm -> success={ok} result_code={result.result_code} "
-            f"message={result.message!r}"
-        )
-        return ok
-
-    def _spin_once(self):
-        # Cheap way to keep the service client alive between publishes.
-        rclpy.spin_once(self, timeout_sec=0.0)
-
     def run(self, mode: str) -> None:
-        # Send a single REST frame shortly after arm so a valid target exists.
+        # Send an initial REST frame so a valid target exists.
         self._pub.publish(self.build(REST))
         period = 1.0 / self._rate
         while rclpy.ok():
@@ -134,14 +103,11 @@ def main(args=None) -> None:
     rclpy.init(args=args)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rate", type=float, default=10.0, help="publish rate Hz")
-    parser.add_argument("--no-arm", action="store_true", help="do not arm first")
     parser.add_argument("--mode", choices=["hold", "wave", "close"], default="close")
     namespace, _ = parser.parse_known_args()
 
     node = FakeLeftCommandNode(namespace.rate)
     try:
-        if not namespace.no_arm:
-            node.arm()
         node.run(namespace.mode)
     except KeyboardInterrupt:
         pass

@@ -117,12 +117,10 @@ def graph():
 
 
 def prepare_side(executor, provider, observer, side: Side):
-    """Arm one side: wait for init, deliver a target, call arm."""
+    """Wait for one side to be ready (init read + error monitor connected),
+    then publish one warm-up target so DDS discovery has matched."""
     command_pub = observer.create_publisher(
         JointState, f"/o10_control/{side.value}/command", 10
-    )
-    arm_client = observer.create_client(
-        ControlOperation, f"/o10_control/{side.value}/arm"
     )
     assert spin_until(
         executor,
@@ -131,9 +129,7 @@ def prepare_side(executor, provider, observer, side: Side):
         and provider.side(side).error_queries_received >= 1,
     )
     publish_target(executor, observer, command_pub, side)
-    response = call_operation(executor, arm_client, ControlOperation.Request())
-    assert response.success, f"arm failed: {response.message}"
-    return command_pub, arm_client
+    return command_pub
 
 
 def test_startup_does_not_publish_commands(graph):
@@ -153,7 +149,7 @@ def test_startup_does_not_publish_commands(graph):
     assert right_messages == []
 
 
-def test_armed_left_command_is_forwarded_and_the_right_is_untouched(graph):
+def test_left_command_is_forwarded_and_the_right_is_untouched(graph):
     provider, _, observer, executor = graph
     left_messages = []
     right_messages = []
@@ -163,7 +159,7 @@ def test_armed_left_command_is_forwarded_and_the_right_is_untouched(graph):
     observer.create_subscription(
         JointState, "/o10/right/joint_cmd", right_messages.append, 10
     )
-    command_pub, _ = prepare_side(executor, provider, observer, Side.LEFT)
+    command_pub = prepare_side(executor, provider, observer, Side.LEFT)
 
     left_messages.clear()
     published = publish_target(executor, observer, command_pub, Side.LEFT)
@@ -181,7 +177,7 @@ def test_armed_left_command_is_forwarded_and_the_right_is_untouched(graph):
     assert list(left_messages[0].effort) == []
 
 
-def test_disarmed_side_never_forwards_even_with_targets(graph):
+def test_side_before_init_never_forwards_even_with_targets(graph):
     _, _, observer, executor = graph
     left_messages = []
     observer.create_subscription(
@@ -202,7 +198,7 @@ def test_hard_slew_limit_clips_a_big_target_step(graph):
     observer.create_subscription(
         JointState, "/o10/left/joint_cmd", left_messages.append, 10
     )
-    command_pub, _ = prepare_side(executor, provider, observer, Side.LEFT)
+    command_pub = prepare_side(executor, provider, observer, Side.LEFT)
 
     big = LEFT_BIG_STEP
     publish_target(executor, observer, command_pub, Side.LEFT, big)
@@ -213,7 +209,7 @@ def test_hard_slew_limit_clips_a_big_target_step(graph):
 
 def test_vendor_error_latches_fault_and_clear_fault_recovers(graph):
     provider, _, observer, executor = graph
-    command_pub, arm_client = prepare_side(executor, provider, observer, Side.LEFT)
+    command_pub = prepare_side(executor, provider, observer, Side.LEFT)
 
     states = []
     observer.create_subscription(
@@ -239,64 +235,49 @@ def test_vendor_error_latches_fault_and_clear_fault_recovers(graph):
     provider.left.error_bits = (0,) * 10
     response = call_operation(executor, clear_client, ControlOperation.Request())
     assert response.success, f"clear_fault failed: {response.message}"
-    assert response.state.phase == O10ControlState.PHASE_DISARMED_READY
+    # A still-fresh target resumes motion automatically after clear_fault.
+    assert response.state.phase == O10ControlState.PHASE_ACTIVE
     assert not response.state.fault_latched
-
-    response = call_operation(executor, arm_client, ControlOperation.Request())
-    assert response.success
+    assert response.state.motion_enabled
 
 
-def test_arm_rejects_out_of_limit_target(graph):
+def test_out_of_limit_target_is_never_forwarded(graph):
     provider, _, observer, executor = graph
-    command_pub = observer.create_publisher(
-        JointState, "/o10_control/left/command", 10
-    )
-    arm_client = observer.create_client(
-        ControlOperation, "/o10_control/left/arm"
-    )
-    assert spin_until(
-        executor,
-        lambda: command_pub.get_subscription_count() == 1
-        and provider.left.reads_received >= 1
-        and provider.left.error_queries_received >= 1,
-    )
-
-    # With no prior valid target, an out-of-limit target must not make arm
-    # eligible or publish a hardware command.
+    command_pub = prepare_side(executor, provider, observer, Side.LEFT)
     publish_target(
         executor, observer, command_pub, Side.LEFT, [0.04] + [0.0] * 9
     )
-    response = call_operation(executor, arm_client, ControlOperation.Request())
-    assert not response.success
-    assert (
-        response.result_code
-        == ControlOperation.Response.ARM_REJECTED_TARGET_NOT_READY
-    )
-    assert response.state.target_result == O10ControlState.TARGET_REJECTED_LIMIT
-    assert not response.state.motion_enabled
-    assert provider.left.commands_received == 0
-
-
-def test_commu_except_bit_alone_does_not_block_arm(graph):
-    """commu_except (bit4 = 16) is a vendor-historical marker and must not
-    latch a fault or block arming; a real fatal bit must still do so."""
-    provider, _, observer, executor = graph
-    command_pub = observer.create_publisher(
-        JointState, "/o10_control/left/command", 10
-    )
-    arm_client = observer.create_client(
-        ControlOperation, "/o10_control/left/arm"
+    states = []
+    observer.create_subscription(
+        O10ControlState, "/o10_control/left/state", states.append, 10
     )
     assert spin_until(
         executor,
-        lambda: command_pub.get_subscription_count() == 1
-        and provider.left.reads_received >= 1
-        and provider.left.error_queries_received >= 1,
+        lambda: states
+        and states[-1].target_result == O10ControlState.TARGET_REJECTED_LIMIT,
     )
-    # commu_except only: must NOT latch a fault or block arming.
+    # The rejected target must never reach the hardware provider.  (The
+    # warm-up target keeps the side motion-enabled overall; only the new
+    # target is rejected.)
+    assert provider.left.commands_received == 0
+
+
+def test_commu_except_bit_alone_does_not_block_motion(graph):
+    """commu_except (bit4 = 16) is a vendor-historical marker and must not
+    latch a fault or block motion; a real fatal bit must still do so."""
+    provider, _, observer, executor = graph
+    command_pub = prepare_side(executor, provider, observer, Side.LEFT)
+    states = []
+    observer.create_subscription(
+        O10ControlState, "/o10_control/left/state", states.append, 10
+    )
+    # commu_except only: must NOT latch a fault or block motion.
     provider.left.error_bits = (16, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     publish_target(executor, observer, command_pub, Side.LEFT)
-    response = call_operation(executor, arm_client, ControlOperation.Request())
-    assert response.success, f"arm failed with commu_except-only: {response.message}"
-    assert not response.state.fault_latched
-    assert response.state.motion_enabled
+    assert spin_until(
+        executor,
+        lambda: states
+        and states[-1].motion_enabled
+        and not states[-1].fault_latched,
+    )
+    assert provider.left.commands_received >= 1

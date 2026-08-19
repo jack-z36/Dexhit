@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -52,9 +53,13 @@ class Recorder:
         if self.command_factory is None and shutil.which("ros2") is None:
             raise RecorderUnavailable("ROS 2 command ros2 is not available; MCAP recording was not started")
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        # ros2 bag CLI 会派生 recorder 子进程；与真节点一样经 pdeath_guard
+        # 接管父死亡清理，避免编排器退出后 recorder 孤儿化继续写盘。
+        command = [sys.executable, "-m", "rokoko_omnihand_launchpad.pdeath_guard",
+                   "--", *self.command(topics)]
         try:
-            self.process = spawn_managed_process(self.command(topics), self.log_path,
-                                                 pdeathsig=self.pdeathsig)
+            self.process = spawn_managed_process(command, self.log_path,
+                                                 pdeathsig=lambda: None)
         except Exception:
             raise
         return self.process

@@ -16,8 +16,8 @@ uint8 EVENT_COMPONENT_STATE_CHANGED=7
 uint8 event
 
 uint8 PHASE_INITIALIZING=0
-uint8 PHASE_DISARMED_NOT_READY=1
-uint8 PHASE_DISARMED_READY=2
+uint8 PHASE_IDLE_NOT_READY=1
+uint8 PHASE_IDLE_READY=2
 uint8 PHASE_ACTIVE=3
 uint8 PHASE_PAUSED_TARGET_STALE=4
 uint8 PHASE_FAULT_LATCHED=5
@@ -27,7 +27,6 @@ bool feedback_ready
 bool error_monitor_ready
 bool target_ready
 bool target_fresh
-bool armed
 bool fault_latched
 bool motion_enabled
 

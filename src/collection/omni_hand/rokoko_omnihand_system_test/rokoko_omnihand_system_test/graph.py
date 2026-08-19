@@ -203,7 +203,7 @@ class RosGraph:
                 f"/o10_control/{side.value}/{operation}",
             )
             for side in (Side.LEFT, Side.RIGHT)
-            for operation in ("arm", "disarm", "clear_fault")
+            for operation in ("clear_fault",)
         }
 
     def _observe_raw(self, side: str, message: RawHandFrame) -> None:

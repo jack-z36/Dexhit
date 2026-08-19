@@ -153,7 +153,6 @@ def test_o10_control_state_is_exact_doc06_schema():
         "error_monitor_ready": "boolean",
         "target_ready": "boolean",
         "target_fresh": "boolean",
-        "armed": "boolean",
         "fault_latched": "boolean",
         "motion_enabled": "boolean",
         "target_result": "uint8",
@@ -199,16 +198,16 @@ def test_o10_control_state_is_exact_doc06_schema():
         name: getattr(O10ControlState, name)
         for name in (
             "PHASE_INITIALIZING",
-            "PHASE_DISARMED_NOT_READY",
-            "PHASE_DISARMED_READY",
+            "PHASE_IDLE_NOT_READY",
+            "PHASE_IDLE_READY",
             "PHASE_ACTIVE",
             "PHASE_PAUSED_TARGET_STALE",
             "PHASE_FAULT_LATCHED",
         )
     } == {
         "PHASE_INITIALIZING": 0,
-        "PHASE_DISARMED_NOT_READY": 1,
-        "PHASE_DISARMED_READY": 2,
+        "PHASE_IDLE_NOT_READY": 1,
+        "PHASE_IDLE_READY": 2,
         "PHASE_ACTIVE": 3,
         "PHASE_PAUSED_TARGET_STALE": 4,
         "PHASE_FAULT_LATCHED": 5,
@@ -272,17 +271,6 @@ def test_control_operation_has_all_doc07_result_codes_and_snapshot():
     }
     assert isinstance(ControlOperation.Response().state, O10ControlState)
     expected = {
-        "ARM_SUCCESS": 0,
-        "ARM_ALREADY_ARMED": 1,
-        "ARM_REJECTED_FAULT_LATCHED": 10,
-        "ARM_REJECTED_FEEDBACK_NOT_READY": 11,
-        "ARM_REJECTED_ERROR_MONITOR_NOT_READY": 12,
-        "ARM_REJECTED_TARGET_NOT_READY": 13,
-        "ARM_REJECTED_TARGET_STALE": 14,
-        "ARM_REJECTED_CONTROL_STATE": 15,
-        "DISARM_SUCCESS": 20,
-        "DISARM_ALREADY_DISARMED": 21,
-        "DISARM_REJECTED_CONTROL_STATE": 22,
         "CLEAR_FAULT_SUCCESS": 30,
         "CLEAR_FAULT_ALREADY_CLEAR": 31,
         "CLEAR_FAULT_REJECTED_CONTROL_STATE": 40,

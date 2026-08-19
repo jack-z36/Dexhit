@@ -19,7 +19,7 @@ if frontend_dist.is_dir():
             install_dir = "share/" + package_name + "/web"
             if relative_parent != ".":
                 install_dir += "/" + relative_parent
-    data_files.append((install_dir, [path.relative_to(package_root).as_posix()]))
+            data_files.append((install_dir, [path.relative_to(package_root).as_posix()]))
 
 setup(
     name=package_name,

@@ -25,10 +25,8 @@ from omnihand_o10_contracts import (
 )
 
 from ..contracts import (
-    ArmCode,
     ClearFaultCode,
     ControlStateSnapshot,
-    DisarmCode,
     SoftTargetValue,
 )
 
@@ -98,7 +96,6 @@ def control_state_to_message(
     result.target_ready = state.target_ready
     result.target_fresh = state.target_fresh
 
-    result.armed = state.armed
     result.fault_latched = state.fault_latched
     result.motion_enabled = state.motion_enabled
 
@@ -172,15 +169,7 @@ def operation_result_to_response(
     response = ControlOperation.Response()
     response.success = result.success
     code = result.result_code
-    if isinstance(code, ArmCode):
-        response.result_code = _wire_constant(
-            ControlOperation.Response, "ARM_", code.name
-        )
-    elif isinstance(code, DisarmCode):
-        response.result_code = _wire_constant(
-            ControlOperation.Response, "DISARM_", code.name
-        )
-    elif isinstance(code, ClearFaultCode):
+    if isinstance(code, ClearFaultCode):
         response.result_code = _wire_constant(
             ControlOperation.Response, "CLEAR_FAULT_", code.name
         )

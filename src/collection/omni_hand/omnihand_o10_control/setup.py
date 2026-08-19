@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Dexhit',
     maintainer_email='noreply@dexhit.local',
-    description='Per-side armed/fault-latched hard-slew control for OmniHand O10.',
+    description='Per-side arm-free, fault-latched hard-slew control for OmniHand O10.',
     license='TODO',
     tests_require=['pytest'],
     entry_points={

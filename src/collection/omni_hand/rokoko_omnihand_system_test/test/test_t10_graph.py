@@ -63,7 +63,7 @@ def test_udp_datagram_is_observable_at_retargeting_public_state(graph):
 
 
 def test_public_control_topic_and_services_reach_software_provider(graph):
-    """The control seam uses only the command Topic and arm Service."""
+    """The control seam uses only the command Topic (motion is arm-free)."""
     side = Side.RIGHT
     assert graph.spin_until(
         lambda: any(
@@ -86,9 +86,6 @@ def test_public_control_topic_and_services_reach_software_provider(graph):
                 "O10 model/Pinocchio prerequisites"
             )
         pytest.fail("public control target did not become ready")
-    result = graph.call_operation(side, "arm")
-    assert result.success
-    assert result.state.armed
     graph.publish_target(side)
     assert graph.spin_until(lambda: bool(graph.final_commands[side.value]))
     assert graph.spin_until(lambda: bool(graph.feedback[side.value]))

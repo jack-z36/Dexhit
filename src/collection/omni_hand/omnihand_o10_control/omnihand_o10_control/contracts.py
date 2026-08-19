@@ -23,8 +23,6 @@ __all__ = [
     "FaultReason",
     "VENDOR_ERROR_BIT_COMMU_EXCEPT",
     "FATAL_ERROR_BIT_MASK",
-    "ArmCode",
-    "DisarmCode",
     "ClearFaultCode",
     "ControlConfig",
     "SoftTargetValue",
@@ -38,8 +36,6 @@ __all__ = [
     "ReadActiveJointsTimeout",
     "CommandSent",
     "CommandPublishFailed",
-    "OperatorArmRequest",
-    "OperatorDisarmRequest",
     "OperatorClearFaultRequest",
     "TimeoutCheck",
     "Effect",
@@ -55,8 +51,8 @@ class Phase(Enum):
     """Semantic lifecycle phase; the ROS adapter owns its wire value."""
 
     INITIALIZING = auto()
-    DISARMED_NOT_READY = auto()
-    DISARMED_READY = auto()
+    IDLE_NOT_READY = auto()
+    IDLE_READY = auto()
     ACTIVE = auto()
     PAUSED_TARGET_STALE = auto()
     FAULT_LATCHED = auto()
@@ -64,7 +60,6 @@ class Phase(Enum):
     # Semantic compatibility aliases for callers that used the pre-wire
     # vocabulary; these are not wire values.
     UNINITIALIZED = INITIALIZING
-    DISARMED = DISARMED_NOT_READY
     FAULT = FAULT_LATCHED
 
 
@@ -81,8 +76,6 @@ class Trigger(Enum):
     COMPONENT_STATE_CHANGED = auto()
 
     FEEDBACK_UPDATE = FEEDBACK_RECEIVED
-    OPERATOR_ARM = OPERATOR_REQUEST
-    OPERATOR_DISARM = OPERATOR_REQUEST
     OPERATOR_CLEAR_FAULT = OPERATOR_REQUEST
     FAULT = FAULT_CHANGED
     PROVIDER_CHANGE = COMPONENT_STATE_CHANGED
@@ -143,27 +136,6 @@ class FaultReason(Enum):
     VENDOR_ERROR_BIT = HARDWARE_ERROR
     ILLEGAL_FEEDBACK = INVALID_FEEDBACK
     RESTART_DISCONNECT = COMPONENT_RESTART_OR_DISCONNECT
-
-
-class ArmCode(Enum):
-    """Semantic arm result; the ROS adapter owns its wire value."""
-
-    SUCCESS = auto()
-    ALREADY_ARMED = auto()
-    REJECTED_FAULT_LATCHED = auto()
-    REJECTED_FEEDBACK_NOT_READY = auto()
-    REJECTED_ERROR_MONITOR_NOT_READY = auto()
-    REJECTED_TARGET_NOT_READY = auto()
-    REJECTED_TARGET_STALE = auto()
-    REJECTED_CONTROL_STATE = auto()
-
-
-class DisarmCode(Enum):
-    """Semantic disarm result; the ROS adapter owns its wire value."""
-
-    SUCCESS = auto()
-    ALREADY_DISARMED = auto()
-    REJECTED_CONTROL_STATE = auto()
 
 
 class ClearFaultCode(Enum):
@@ -277,7 +249,6 @@ class ControlStateSnapshot:
     error_monitor_ready: bool
     target_ready: bool
     target_fresh: bool
-    armed: bool
     fault_latched: bool
     motion_enabled: bool
     target_result: TargetResult
@@ -372,18 +343,6 @@ class CommandPublishFailed:
 
     ros_now: JointSampleTime
     monotonic_now: float
-
-
-@dataclass(frozen=True)
-class OperatorArmRequest:
-    monotonic_now: float
-    ros_now: JointSampleTime
-
-
-@dataclass(frozen=True)
-class OperatorDisarmRequest:
-    monotonic_now: float
-    ros_now: JointSampleTime
 
 
 @dataclass(frozen=True)

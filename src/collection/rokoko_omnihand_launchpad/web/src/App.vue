@@ -19,7 +19,9 @@ const TEMPLATES = {
 }
 
 const state = ref({ config: { blocks: [], side: 'both', profile: 'default', label: '' }, nodes: {}, validation: { errors: [], warnings: [], confirmations: [] }, events: [] })
-const draft = ref({ blocks: [], side: 'both', profile: 'default', label: '', udp_port: 9000, actor: 0, can_channel: 'can0' })
+const draft = ref({ blocks: [], side: 'both', profile: 'default', label: '', udp_port: 14043, actor: 0, can_channel: 'can0' })
+const draftDirty = ref(false)
+const draftValidation = ref(null)
 const running = ref(false)
 const busy = ref(false)
 const notice = ref('')
@@ -27,17 +29,31 @@ const modal = ref(null)
 const runs = ref([])
 let socket
 let pollTimer
+let loadedOnce = false
 
-const selectedBlocks = computed(() => draft.value.blocks)
-const validation = computed(() => state.value.validation || { errors: [], warnings: [], confirmations: [] })
+// 服务端 config 是已保存的权威期望集合，draft 是启动前的本地暂存。
+// 存在未保存编辑（draftDirty）时快照不得回灌 draft，否则本地选择会被
+// 旧的服务端值在下一帧 WebSocket 推送中冲掉（模板"点亮即熄灭"根因）。
+const validation = computed(() => draftValidation.value || state.value.validation || { errors: [], warnings: [], confirmations: [] })
 const hasErrors = computed(() => validation.value.errors?.length > 0)
 const hasDanger = computed(() => validation.value.confirmations?.length > 0)
 const allExpected = computed(() => BLOCKS.some(({ id }) => state.value.nodes?.[id]?.expected))
+const desiredBlocks = computed(() => running.value
+  ? BLOCKS.filter(({ id }) => state.value.nodes?.[id]?.expected).map(({ id }) => id)
+  : [...draft.value.blocks])
+
+function markDirty() { draftDirty.value = true }
+
+function syncDraftFromServer(config) {
+  if (!config) return
+  draft.value = { ...draft.value, ...config, udp_port: 14043, blocks: [...(config.blocks || [])] }
+  draftDirty.value = false
+  draftValidation.value = null
+}
 
 function applySnapshot(snapshot) {
   state.value = snapshot
-  const config = snapshot.config || draft.value
-  draft.value = { ...draft.value, ...config, blocks: [...(config.blocks || [])] }
+  if (!loadedOnce || !draftDirty.value) { loadedOnce = true; syncDraftFromServer(snapshot.config) }
   running.value = Object.values(snapshot.nodes || {}).some((node) => node.actual === 'stopping' || node.actual === 'starting' || node.actual === 'running' || node.actual === 'crashed' || (node.pid && node.actual !== 'cleanup_failed'))
 }
 
@@ -53,12 +69,13 @@ async function refresh() {
 }
 
 async function validate() {
-  try { state.value.validation = await api('/api/validate', { method: 'POST', body: JSON.stringify({ blocks: draft.value.blocks, confirmation: false }) }) } catch (error) { notice.value = error.message }
+  try { draftValidation.value = await api('/api/validate', { method: 'POST', body: JSON.stringify({ blocks: draft.value.blocks, confirmation: false }) }) } catch (error) { notice.value = error.message }
 }
 
 function chooseTemplate(name) {
   draft.value.blocks = [...TEMPLATES[name].blocks]
   draft.value.template = name
+  markDirty()
   notice.value = `已预点亮「${TEMPLATES[name].label}」模板，可继续自由增删方块。`
   validate()
 }
@@ -101,6 +118,7 @@ async function toggleBlock(block) {
     return
   }
   draft.value.template = 'custom'
+  markDirty()
   const index = draft.value.blocks.indexOf(block.id)
   if (index >= 0) draft.value.blocks.splice(index, 1)
   else draft.value.blocks.push(block.id)
@@ -111,7 +129,8 @@ async function saveConfig(confirmation = false) {
   busy.value = true
   try {
     const result = await api('/api/config', { method: 'POST', body: JSON.stringify({ ...draft.value, confirmation }) })
-    applySnapshot(result)
+    state.value = result
+    syncDraftFromServer(result.config)
     notice.value = '配置已保存。'
     return true
   } catch (error) { notice.value = error.message; return false } finally { busy.value = false }
@@ -119,8 +138,10 @@ async function saveConfig(confirmation = false) {
 
 async function prepareAnd(action) {
   await validate()
-  if (hasErrors.value) { notice.value = '存在硬阻止规则，请先修正方块组合。'; return }
+  // 后端把"未确认的危险组合"同时计为 error 并单列 confirmations；
+  // 必须优先走二次确认弹窗，否则确认流程永远被硬阻止分支拦截。
   if (hasDanger.value) { modal.value = { type: 'danger', action }; return }
+  if (hasErrors.value) { notice.value = '存在硬阻止规则，请先修正方块组合。'; return }
   await saveConfig(false)
   if (action === 'start') await run('/api/start', '已发出全启动请求。')
 }
@@ -200,7 +221,7 @@ onUnmounted(() => { window.clearInterval(pollTimer); socket?.close() })
     <section class="panel config-panel">
       <div class="section-heading"><div><span class="section-kicker">02 / 方块网格</span><h2>期望状态与实际状态</h2></div><div class="legend"><span><i class="legend-dot expected"></i>期望亮</span><span><i class="legend-dot actual"></i>实际运行</span><span><i class="legend-dot danger"></i>异常</span></div></div>
       <div class="block-grid">
-        <button v-for="block in BLOCKS" :key="block.id" class="block" :class="[`kind-${block.kind === '工具' ? 'tool' : 'business'}`, { selected: draft.blocks.includes(block.id), flashing: statusFor(block.id) === 'dead' }]" :aria-pressed="draft.blocks.includes(block.id)" @click="toggleBlock(block)">
+        <button v-for="block in BLOCKS" :key="block.id" class="block" :class="[`kind-${block.kind === '工具' ? 'tool' : 'business'}`, { selected: desiredBlocks.includes(block.id), flashing: statusFor(block.id) === 'dead' }]" :aria-pressed="desiredBlocks.includes(block.id)" @click="toggleBlock(block)">
           <span class="block-top"><span class="block-icon">{{ block.kind === '工具' ? '◇' : '◆' }}</span><span class="kind-label">{{ block.kind }}</span><span class="state-light" :class="statusFor(block.id)"></span></span>
           <strong>{{ block.title }}</strong><small>{{ block.description }}</small><span class="block-status">{{ statusText(block.id) }}</span>
         </button>
@@ -210,7 +231,7 @@ onUnmounted(() => { window.clearInterval(pollTimer); socket?.close() })
 
     <section class="two-column">
       <div class="panel settings-panel"><div class="section-heading"><div><span class="section-kicker">03 / 会话配置</span><h2>侧别与关键参数</h2></div></div>
-        <div class="form-grid"><label>侧别<select v-model="draft.side"><option value="both">双侧</option><option value="left">仅左</option><option value="right">仅右</option></select></label><label>参数档案<select v-model="draft.profile"><option value="default">默认真机基线</option><option value="diagnostic">诊断档案</option></select></label><label>UDP 端口<input v-model.number="draft.udp_port" type="number" min="1" max="65535" /></label><label>Actor 序号<input v-model.number="draft.actor" type="number" min="0" /></label><label>CAN 通道<input v-model="draft.can_channel" /></label><label>本次 Label<input v-model="draft.label" placeholder="例如：左手握持测试" /></label></div>
+        <div class="form-grid"><label>侧别<select v-model="draft.side" @input="markDirty"><option value="both">双侧</option><option value="left">仅左</option><option value="right">仅右</option></select></label><label>参数档案<select v-model="draft.profile" @input="markDirty"><option value="default">默认真机基线</option><option value="diagnostic">诊断档案</option></select></label><label>Rokoko UDP 固定端口<input :value="14043" type="number" disabled /></label><label>Actor 序号<input v-model.number="draft.actor" type="number" min="0" @input="markDirty" /></label><label>CAN 通道<input v-model="draft.can_channel" @input="markDirty" /></label><label>本次 Label<input v-model="draft.label" placeholder="例如：左手握持测试" @input="markDirty" /></label></div>
         <p class="muted">仅暴露常用关键参数；完整业务调参仍由预设档案负责。</p>
       </div>
       <div class="panel action-panel"><div class="section-heading"><div><span class="section-kicker">04 / 控制</span><h2>会话操作</h2></div></div><button class="primary" :disabled="busy" @click="prepareAnd('start')">▶ {{ running ? '重新启动全部' : '启动选中方块' }}</button><div class="action-row"><button :disabled="busy || !running" @click="run('/api/stop', '已发出全停请求。')">■ 全停</button><button :disabled="busy || !running" @click="run('/api/restart', '已发出重启请求。')">↻ 重启</button><button :disabled="busy" @click="preflight">⌁ 运行预检</button></div><p class="safety-note">网页不提供 arm / disarm / clear_fault。真机授权仍须由操作者在终端显式完成。</p></div>

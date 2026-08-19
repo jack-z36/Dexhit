@@ -11,20 +11,16 @@ from omnihand_o10_contracts import (
 
 from omnihand_o10_control.application.control_session import ControlSession
 from omnihand_o10_control.contracts import (
-    ArmCode,
     ClearFaultCode,
     CommandPublishFailed,
     CommandSent,
     ControlConfig,
-    DisarmCode,
     ErrorStatusReceived,
     FaultReason,
     FeedbackReceived,
     InvalidErrorStatusReceived,
     InvalidFeedbackReceived,
-    OperatorArmRequest,
     OperatorClearFaultRequest,
-    OperatorDisarmRequest,
     OperationResult,
     Phase,
     PublishControlState,
@@ -106,6 +102,22 @@ def deliver_target(session: ControlSession, stamp=2.0, now=2.0):
     )
 
 
+def deliver_target_confirmed(session: ControlSession, stamp=2.0, now=2.0):
+    """Deliver a target and complete the command round trip (sent + feedback)."""
+    effects = session.on_target(
+        TargetReceived(soft_target(stamp=stamp), JointSampleTime(now), now, JointSampleTime(now))
+    )
+    for effect in effects:
+        if isinstance(effect, SendJointCommand):
+            session.on_command_sent(
+                CommandSent(effect.command, JointSampleTime(now), now)
+            )
+    session.on_feedback(
+        FeedbackReceived(feedback(), JointSampleTime(now), now)
+    )
+    return effects
+
+
 def single_result(effects):
     results = [e for e in effects if isinstance(e, OperationResult)]
     assert len(results) == 1
@@ -116,12 +128,11 @@ def test_initial_phase_is_uninitialized():
     session = ControlSession(make_config())
     snapshot = session.initial_snapshot(JointSampleTime(0.0))
     assert snapshot.phase is Phase.UNINITIALIZED
-    assert not snapshot.armed
     assert not snapshot.fault_latched
     assert not snapshot.motion_enabled
 
 
-def test_first_feedback_read_transitions_to_disarmed():
+def test_first_feedback_read_keeps_initializing():
     session = ControlSession(make_config())
     effects = session.on_read_result(
         ReadActiveJointsResult(
@@ -135,135 +146,76 @@ def test_first_feedback_read_transitions_to_disarmed():
     assert snapshot.feedback_ready
 
 
-def test_arm_rejects_before_feedback_read():
+
+
+
+
+
+def test_target_before_init_never_produces_a_command():
+    # feedback/error monitor not ready yet -> motion stays disabled
     session = ControlSession(make_config())
-    result = single_result(
-        session.on_arm_request(OperatorArmRequest(1.0, JointSampleTime(1.0)))
-    )
-    assert not result.success
-    assert result.result_code == ArmCode.REJECTED_FEEDBACK_NOT_READY
-
-
-def test_arm_rejects_without_error_monitor():
-    session = ControlSession(make_config())
-    session.on_read_result(
-        ReadActiveJointsResult(
-            True, feedback(), JointSampleTime(0.0), 0.0
-        )
-    )
-    deliver_target(session)
-    result = single_result(
-        session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
-    )
-    assert result.result_code == ArmCode.REJECTED_ERROR_MONITOR_NOT_READY
-
-
-def test_arm_rejects_without_a_valid_target():
-    session = ControlSession(make_config())
-    init_session(session)
-    result = single_result(
-        session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
-    )
-    assert result.result_code == ArmCode.REJECTED_TARGET_NOT_READY
-
-
-def test_arm_rejects_a_stale_target():
-    session = ControlSession(make_config())
-    init_session(session)
-    deliver_target(session, stamp=1.0, now=2.0)  # age 1.0s > 0.5s timeout
-    result = single_result(
-        session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
-    )
-    assert result.result_code == ArmCode.REJECTED_TARGET_STALE
-
-
-def test_arm_succeeds_and_enables_motion():
-    session = ControlSession(make_config())
-    init_session(session)
-    deliver_target(session)
-    result = single_result(
-        session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
-    )
-    assert result.success
-    assert result.result_code == ArmCode.SUCCESS
-    assert result.state.phase is Phase.ACTIVE
-    assert result.state.armed
-    assert result.state.motion_enabled
-
-
-def test_disarmed_target_never_produces_a_command():
-    session = ControlSession(make_config())
-    init_session(session)
     effects = session.on_target(
         TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
     )
     assert not any(isinstance(e, SendJointCommand) for e in effects)
 
 
-def test_armed_target_produces_a_slew_limited_command():
+def test_fresh_target_produces_a_slew_limited_command():
     session = ControlSession(make_config())
     init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_target(
-        TargetReceived(soft_target(), JointSampleTime(2.01), 2.01, JointSampleTime(2.01))
+        TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
     )
     commands = [e for e in effects if isinstance(e, SendJointCommand)]
     assert len(commands) == 1
-    # step = rate * credit = 0.1 * 0.01
-    assert list(commands[0].command.values)[0] == pytest.approx(0.001)
+    # step = rate * credit; credit is capped at max_time_credit = 0.1
+    assert list(commands[0].command.values)[0] == pytest.approx(0.01)
 
 
 def test_command_sent_confirms_and_advances_the_slew_base():
     session = ControlSession(make_config())
     init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_target(
-        TargetReceived(soft_target(), JointSampleTime(2.01), 2.01, JointSampleTime(2.01))
+        TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
     )
     command = effects[0].command
     confirm = session.on_command_sent(
-        CommandSent(command, JointSampleTime(2.01), 2.01)
+        CommandSent(command, JointSampleTime(2.0), 2.0)
     )
     assert isinstance(confirm[0], PublishControlState)
     assert confirm[0].state.command_published
-    # next target now steps from the confirmed base, not the soft target
+    # next target now steps from the confirmed base (0.01) plus dt=0.01
     effects = session.on_target(
-        TargetReceived(soft_target(), JointSampleTime(2.02), 2.02, JointSampleTime(2.02))
+        TargetReceived(soft_target(), JointSampleTime(2.01), 2.01, JointSampleTime(2.01))
     )
-    assert list(effects[0].command.values)[0] == pytest.approx(0.002)
+    assert list(effects[0].command.values)[0] == pytest.approx(0.011)
 
 
 def test_publish_failure_does_not_advance_the_slew_base():
     session = ControlSession(make_config())
     init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_target(
-        TargetReceived(soft_target(), JointSampleTime(2.01), 2.01, JointSampleTime(2.01))
+        TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
     )
     failed = session.on_command_publish_failed(
-        CommandPublishFailed(JointSampleTime(2.01), 2.01)
+        CommandPublishFailed(JointSampleTime(2.0), 2.0)
     )
     assert isinstance(failed[0], PublishControlState)
     assert not failed[0].state.command_published
     effects = session.on_target(
         TargetReceived(soft_target(), JointSampleTime(2.02), 2.02, JointSampleTime(2.02))
     )
-    # base never advanced past 0.0; clock kept running (step = 0.1 * 0.02)
-    assert list(effects[0].command.values)[0] == pytest.approx(0.002)
+    # base never advanced past 0.0; credit is capped at max_time_credit = 0.1
+    assert list(effects[0].command.values)[0] == pytest.approx(0.01)
 
 
 def test_command_readback_timeout_latches_a_fault():
     session = ControlSession(make_config())
     init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_target(
-        TargetReceived(soft_target(), JointSampleTime(2.01), 2.01, JointSampleTime(2.01))
+        TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
     )
-    session.on_command_sent(CommandSent(effects[0].command, JointSampleTime(2.01), 2.01))
+    session.on_command_sent(CommandSent(effects[0].command, JointSampleTime(2.0), 2.0))
     timeouts = session.check_timeouts(TimeoutCheck(3.0, JointSampleTime(3.0)))
     fault_states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
     assert fault_states
@@ -275,8 +227,7 @@ def test_command_readback_timeout_latches_a_fault():
 def test_provider_heartbeat_timeout_latches_a_restart_fault():
     session = ControlSession(make_config())
     init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
+    deliver_target_confirmed(session)
     timeouts = session.check_timeouts(TimeoutCheck(4.0, JointSampleTime(4.0)))
     fault_states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
     assert FaultReason.RESTART_DISCONNECT in fault_states[0].fault_reasons
@@ -286,7 +237,6 @@ def test_vendor_error_bit_latches_a_fault():
     session = ControlSession(make_config())
     init_session(session)
     deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_error_status(
         ErrorStatusReceived(error_status(bits=(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)), JointSampleTime(2.5), 2.5)
     )
@@ -303,7 +253,6 @@ def test_commu_except_bit_alone_does_not_latch_a_fault():
     session = ControlSession(make_config())
     init_session(session)
     deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_error_status(
         ErrorStatusReceived(error_status(bits=(16.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)), JointSampleTime(2.5), 2.5)
     )
@@ -318,7 +267,6 @@ def test_commu_except_bit_with_fatal_bit_still_latches_a_fault():
     session = ControlSession(make_config())
     init_session(session)
     deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     effects = session.on_error_status(
         ErrorStatusReceived(error_status(bits=(17.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)), JointSampleTime(2.5), 2.5)
     )
@@ -358,19 +306,6 @@ def test_invalid_error_status_latches_after_monitor_was_ready():
     assert states and FaultReason.ERROR_MONITOR_TIMEOUT in states[0].fault_reasons
 
 
-def test_disarm_succeeds_and_disables_motion():
-    session = ControlSession(make_config())
-    init_session(session)
-    deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
-    result = single_result(
-        session.on_disarm_request(OperatorDisarmRequest(3.0, JointSampleTime(3.0)))
-    )
-    assert result.success
-    assert result.result_code == DisarmCode.SUCCESS
-    assert result.state.phase is Phase.DISARMED_READY
-    assert not result.state.armed
-
 
 def latch_fault(session: ControlSession) -> None:
     """Latch a fault and keep the provider heartbeat alive afterwards."""
@@ -381,17 +316,6 @@ def latch_fault(session: ControlSession) -> None:
         ErrorStatusReceived(error_status(), JointSampleTime(2.6), 2.6)
     )
 
-
-def test_disarm_succeeds_in_fault_and_preserves_fault():
-    session = ControlSession(make_config())
-    init_session(session)
-    latch_fault(session)
-    result = single_result(
-        session.on_disarm_request(OperatorDisarmRequest(3.0, JointSampleTime(3.0)))
-    )
-    assert result.success
-    assert result.result_code == DisarmCode.ALREADY_DISARMED
-    assert result.state.fault_latched
 
 
 def test_clear_fault_success_path():
@@ -408,7 +332,7 @@ def test_clear_fault_success_path():
     result = single_result(done)
     assert result.success
     assert result.result_code == ClearFaultCode.SUCCESS
-    assert result.state.phase is Phase.DISARMED_READY
+    assert result.state.phase is Phase.IDLE_READY
     assert not result.state.fault_latched
 
 
@@ -494,7 +418,6 @@ def test_rejected_target_stops_motion_and_records_reason():
     session = ControlSession(make_config())
     init_session(session)
     deliver_target(session)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
     bad = soft_target(position=(0.5, 0.5) + RIGHT_VALID[2:])  # out of limits
     effects = session.on_target(
         TargetReceived(bad, JointSampleTime(2.1), 2.1, JointSampleTime(2.1))
@@ -514,8 +437,7 @@ def test_target_staleness_turns_motion_off_without_a_fault():
         make_config(provider_heartbeat_timeout=100.0)
     )
     init_session(session)
-    deliver_target(session, stamp=2.0, now=2.0)
-    session.on_arm_request(OperatorArmRequest(2.0, JointSampleTime(2.0)))
+    deliver_target_confirmed(session, stamp=2.0, now=2.0)
     # advance time well past both target freshness limits
     timeouts = session.check_timeouts(TimeoutCheck(5.0, JointSampleTime(5.0)))
     states = [e.state for e in timeouts if isinstance(e, PublishControlState)]

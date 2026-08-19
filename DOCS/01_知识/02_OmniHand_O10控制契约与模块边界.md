@@ -71,7 +71,7 @@ O10 有 10 个主动自由度和 6 个被动自由度。控制命令只包含 10
 |    5 | `middle_pip` | `[0, 1.48]`     | `[0, 1.48]`     |
 |    6 | `ring_abad`  | `[0, 0.17]`     | `[-0.17, 0]`    |
 |    7 | `ring_pip`   | `[0, 1.48]`     | `[0, 1.48]`     |
-|    8 | `pinky_abad` | `[0, 0.19]`     | `[-0.19, 0]`    |
+|    8 | `pinky_abad` | `[0, 0.1850049007113989]` | `[-0.1850049007113989, 0]` |
 |    9 | `pinky_pip`  | `[0, 1.48]`     | `[0, 1.48]`     |
 
 ## 重定向软目标与厂商命令语义
@@ -94,7 +94,7 @@ velocity        = []
 effort          = []
 ```
 
-左右手共享名称语义与顺序，Topic 决定逻辑手侧以及对应符号和限位。重定向节点在未 armed 时仍可产生合法软目标用于诊断和外部录制；是否向实体手运动由控制入口的 `motionEnabled` 决定。
+左右手共享名称语义与顺序，Topic 决定逻辑手侧以及对应符号和限位。重定向节点产生的软目标即直接驱动控制；是否向实体手运动由控制入口的 `motionEnabled`（技术前置条件 + 目标新鲜）决定。
 
 stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，但其 `header.stamp` 使用触发恢复成立的当前 RawHandFrame 接收时间，表示本次控制决策触发时刻。恢复过渡状态由诊断消息表达，不在关节命令中编码。
 
@@ -116,17 +116,9 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 - 官方 `joint_states` 是位置命令触发后的回读，不承诺无命令时周期发布。消费者直接订阅官方反馈，控制入口不创建重复状态 Topic。
 - 控制入口的硬限制只约束位置命令变化率，不提供周期轨迹插值、混合力控、触觉读取或硬件错误恢复。
 
-## 显式控制使能
+## 控制使能
 
-技术条件就绪不等于允许实体手运动。每个逻辑手侧独立维护操作者授权锁存：
-
-\[
-\operatorname{armed}_s\in\{\mathrm{false},\mathrm{true}\},
-\qquad
-\operatorname{armed}_s(\text{进程启动})=\mathrm{false}.
-\]
-
-定义以下由控制节点自行验证的瞬时前置条件：
+运动使能不再需要操作者 arm 授权（arm 门控已移除，对齐官方 SDK 直控行为）。定义以下由控制节点自行验证的瞬时前置条件：
 
 - \(\operatorname{feedbackReady}_s\)：该侧硬限制器已经由新鲜、合法的真实启动反馈初始化；
 - \(\operatorname{errorMonitorReady}_s\)：已获得当前有效的 O10 错误状态，且错误轮询未超时；
@@ -140,8 +132,7 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 \boxed{
 \operatorname{motionEnabled}_s
 \iff
-\operatorname{armed}_s
-\land\operatorname{feedbackReady}_s
+\operatorname{feedbackReady}_s
 \land\operatorname{errorMonitorReady}_s
 \land\operatorname{targetReady}_s
 \land\operatorname{targetFresh}_s
@@ -151,13 +142,13 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 
 控制节点不得订阅诊断用的 `RetargetingState` 来驱动安全门。`targetReady` 和 `targetFresh` 必须从控制节点实际收到的 `/o10_control/{side}/command` 及本地计时独立得出，使诊断消息丢失或延迟不会改变机械手运动。
 
-使能必须来自操作者的显式单侧请求。请求到达时只有全部技术前置条件当前成立才可令 \(\operatorname{armed}_s\leftarrow\mathrm{true}\)；否则拒绝并报告原因。失败请求不得排队、缓存或在条件以后恢复时自动生效。使能成功本身不发送命令，必须等待下一条新鲜合法目标。
+运动使能不再依赖操作者显式授权：只要全部技术前置条件（反馈就绪、错误监控就绪）成立且目标新鲜，`motionEnabled` 即自动为真（对齐官方 SDK 的直控行为）。
 
 操作者可以随时解除单侧使能。解除后立即停止产生新的官方命令，但不自动张手、不自动回零、不继续追赶旧目标，也不等同于硬件急停或驱动断能；另一侧不受影响。
 
-上游停止产生新鲜软目标时 \(\operatorname{targetFresh}_s=\mathrm{false}\)，从而暂停发送，但已经成功的 \(\operatorname{armed}_s\) 保持不变。只有上游完成后续定义的恢复过程、重新产生新鲜合法软目标并且操作者未解除使能时，才可通过有界过渡自动恢复；数据恢复本身不能创建或恢复一个已经为 false 的操作者授权。
+上游停止产生新鲜软目标时 \(\operatorname{targetFresh}_s=\mathrm{false}\)，从而暂停发送。上游重新产生新鲜合法软目标后即可通过有界过渡自动恢复，无需任何人工步骤。
 
-控制状态由 `/o10_control/{side}/state` 的 `O10ControlState` 显式报告。操作者通过每侧独立的 `/o10_control/{side}/arm`、`disarm` 和 `clear_fault` Service 发起状态转换；三者共用 `ControlOperation` 请求—应答类型。三类操作的成功条件、幂等行为、拒绝码、原子性和硬限速器状态转换由操作接口契约固定。
+控制状态由 `/o10_control/{side}/state` 的 `O10ControlState` 显式报告。操作者仅通过每侧独立的 `/o10_control/{side}/clear_fault` Service 发起故障清除；该 Service 使用 `ControlOperation` 请求—应答类型。其成功条件、幂等行为、拒绝码、原子性和硬限速器状态转换由操作接口契约固定。`arm`/`disarm` 已随 arm 门控移除而删除。
 
 ## 临时暂停与锁存故障
 
@@ -174,7 +165,7 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 - 单指节点、冻结尺度或 IK 候选无效；
 - 单条上游 O10 目标长度错误、非有限或越界。
 
-临时暂停不自动清除已经成功的 \(\operatorname{armed}_s\)。整侧暂停时停止新命令并保持最后已发送目标；单指失败继续遵守重定向算法的最近有效目标保持语义。恢复是否成立以及有界过渡由 stale 恢复契约单独定义。
+整侧暂停时停止新命令并保持最后已发送目标；单指失败继续遵守重定向算法的最近有效目标保持语义。恢复是否成立以及有界过渡由 stale 恢复契约单独定义。
 
 以下情况属于锁存故障：
 
@@ -188,9 +179,7 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 
 \[
 \boxed{
-\operatorname{faultLatched}_s\leftarrow\mathrm{true},
-\qquad
-\operatorname{armed}_s\leftarrow\mathrm{false}
+\operatorname{faultLatched}_s\leftarrow\mathrm{true}
 }
 \]
 
@@ -199,12 +188,10 @@ stale 恢复后的第一条软目标虽然数值等于 stale 前保持目标，�
 错误位恢复为零或通信重新出现均不能自动清除锁存。清除故障必须由操作者显式请求，并且同时满足：当前错误报告的**致命错误位**全部为零（`commu_except` 历史标记忽略）、通信健康、成功独立读取一帧新鲜合法的真实主动关节状态，并以该状态重新初始化硬限制器。完成后：
 
 \[
-\operatorname{faultLatched}_s\leftarrow\mathrm{false},
-\qquad
-\operatorname{armed}_s=\mathrm{false}.
+\operatorname{faultLatched}_s\leftarrow\mathrm{false}.
 \]
 
-因此清除故障不等于重新使能；操作者必须另行请求使能。
+清除故障后运动不会立即恢复；下一条新鲜合法软目标到达时自动恢复。
 
 厂商 O10 错误状态是触发式读取：必须向 `/o10/{side}/joint_error_cmd` 发送查询才得到一次 `/o10/{side}/joint_error_states`。正式实现必须在硬件 Adapter/控制安全边界确定主动轮询机制、频率和超时；不能因为默认没有错误状态消息就假定 \(\operatorname{errorMonitorReady}_s=\mathrm{true}\) 或 \(\operatorname{faultLatched}_s=\mathrm{false}\)。具体查询频率和超时值留待参数标定。
 

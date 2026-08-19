@@ -15,3 +15,17 @@
 - [ ] 停止方块时显示下游影响提示
 - [ ] 业务节点与工具方块视觉区分；UI 全中文
 - [ ] 以替身进程为对象完整演示配置→启动→单节点启停→全停一轮（截图或 E2E 证据）
+
+## 修复记录（2026-08-19）
+
+**症状**：点击"真机"模板后方块短暂点亮随即熄灭，无法启动。**根因**：模板/方块点击只改前端本地 `draft`，从未持久化；后端 ~10Hz WebSocket 全量快照经 `applySnapshot` 无条件用服务端旧 `config` 覆盖 `draft`，选择在 <100ms 内被冲掉，随后"启动"提交的是空集合并被后端静默接受（`runs/launchpad/` 下 4 个 `blocks: []` 的空 `_real` run 为证）。
+
+**修复**（4 处）：
+1. 前端草稿保护：`draftDirty` 标记，快照仅在首次加载或无未保存编辑时同步 draft；所有编辑路径（模板、方块增删、侧别/档案/端口/Actor/CAN/label）置脏；`saveConfig` 成功后显式回种服务端 config。
+2. 运行中期望态改由服务端 `nodes[].expected` 派生（`desiredBlocks`），消除运行中单节点启停后 draft 与实际期望错位。
+3. 后端加固：`start_all` 空方块集合 → 409；`snapshot` 校验带上 configure 时保存的 confirmation（消除已确认危险组合在快照中永远报硬阻止）。
+4. 追加修复（验证中发现的存量缺陷）：`prepareAnd` 分支顺序导致危险组合二次确认弹窗永远不可达（后端把未确认危险组合同时计为 error，`hasErrors` 先拦截），已改为 `hasDanger` 优先。
+
+**验证证据**：pytest 73 项全过（新增空集合 409、快照 confirmation 两项）；浏览器黑盒：真机模板 4 方块 6 秒粘住（跨 ~60 次 WS 推送 + 2 次轮询）、表单编辑粘住、启动提交后 `config.blocks` = 4 方块且 run events/metadata/logs 齐全（对照修复前空集合）、危险组合弹窗正常弹出可取消、数据链路模板与手动增删正确。
+
+**后续补充（2026-08-19）**：真机四节点"起来即退"与"receiver 永远启动中"已定位并修复（参数变 remap、wrapper 环境缺失、无 starting→running 转换、${VAR:-default} 未展开、PDEATHSIG 孤儿链），详见 [T05 修复记录](05-real-nodes-datalink-preflight.md)。真机启动后四节点已全部"运行中"；遗留的 O10 模型限位不一致与 HCAN 通信错误属真机联调层问题，run 目录 logs/ 已留证。

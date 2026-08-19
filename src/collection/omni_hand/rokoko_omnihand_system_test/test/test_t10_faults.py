@@ -34,7 +34,7 @@ def restart_graph():
         value.close()
 
 
-def _make_ready_and_arm(graph: RosGraph, side=Side.RIGHT):
+def _make_ready_and_motion(graph: RosGraph, side=Side.RIGHT):
     graph.send_scene(sequence=100)
     assert graph.spin_until(lambda: bool(graph.retargeting_states[side.value]))
     assert graph.spin_until(
@@ -56,9 +56,9 @@ def _make_ready_and_arm(graph: RosGraph, side=Side.RIGHT):
                 "O10 model/Pinocchio prerequisites"
             )
         pytest.fail("public control target did not become ready")
-    result = graph.call_operation(side, "arm")
-    assert result.success
-    assert result.state.armed
+    assert graph.spin_until(
+        lambda: any(state.motion_enabled for state in graph.control_states[side.value])
+    )
 
 
 def _fault_mask(graph: RosGraph, side=Side.RIGHT) -> int:
@@ -67,15 +67,14 @@ def _fault_mask(graph: RosGraph, side=Side.RIGHT) -> int:
     return int(states[-1].fault_reason_mask)
 
 
-def test_error_bit_latches_fault_and_revokes_arm(graph):
-    _make_ready_and_arm(graph)
+def test_error_bit_latches_fault_and_disables_motion(graph):
+    _make_ready_and_motion(graph)
     graph.inject(Side.RIGHT, "error_bits")
     assert graph.spin_until(
         lambda: any(state.fault_latched for state in graph.control_states["right"])
     )
     state = graph.control_states["right"][-1]
     assert state.phase == O10ControlState.PHASE_FAULT_LATCHED
-    assert not state.armed
     assert not state.motion_enabled
     assert state.fault_reason_mask & O10ControlState.FAULT_HARDWARE_ERROR
 
@@ -89,7 +88,7 @@ def test_error_bit_latches_fault_and_revokes_arm(graph):
     ],
 )
 def test_runtime_fault_injections_latch_public_control_fault(graph, injection, reason):
-    _make_ready_and_arm(graph)
+    _make_ready_and_motion(graph)
     graph.inject(Side.RIGHT, injection)
     graph.publish_target(Side.RIGHT)
     assert graph.spin_until(
@@ -122,7 +121,7 @@ def test_runtime_fault_injections_latch_public_control_fault(graph, injection, r
 def test_clear_fault_rejects_deterministic_provider_failures(
         graph, mode, expected_code
 ):
-    _make_ready_and_arm(graph)
+    _make_ready_and_motion(graph)
     graph.inject(Side.RIGHT, "error_bits")
     assert graph.spin_until(
         lambda: any(state.fault_latched for state in graph.control_states["right"])
@@ -133,11 +132,10 @@ def test_clear_fault_rejects_deterministic_provider_failures(
     assert not result.success
     assert result.result_code == expected_code
     assert result.state.fault_latched
-    assert not result.state.armed
 
 
 def test_clear_fault_reports_hardware_error_still_present(graph):
-    _make_ready_and_arm(graph)
+    _make_ready_and_motion(graph)
     graph.inject(Side.RIGHT, "error_bits")
     assert graph.spin_until(
         lambda: any(state.fault_latched for state in graph.control_states["right"])
@@ -151,7 +149,7 @@ def test_clear_fault_reports_hardware_error_still_present(graph):
 
 @pytest.mark.parametrize("mode", ["disconnect", "restart"])
 def test_provider_disconnect_and_restart_latch_component_fault(restart_graph, mode):
-    _make_ready_and_arm(restart_graph)
+    _make_ready_and_motion(restart_graph)
     restart_graph.inject(Side.RIGHT, mode)
     assert restart_graph.spin_until(
         lambda: any(
