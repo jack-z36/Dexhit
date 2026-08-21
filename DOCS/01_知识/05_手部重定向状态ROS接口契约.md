@@ -92,7 +92,7 @@ uint8 PHASE_MODEL_ERROR=7
 | `RECOVERY_RESUMING` | 恢复已确认，正在执行保持目标首帧和有界恢复 |
 | `MODEL_ERROR` | 模型、资产或耦合校验失败，不能进入重定向 |
 
-该阶段只描述重定向节点，不编码控制节点的 `armed`、`faultLatched` 或 `motionEnabled`。
+该阶段只描述重定向节点，不编码控制节点的 `faultLatched` 或 `motionEnabled`（`4fedfaa` 起控制侧已无 `armed`）。
 
 ## 整侧布尔状态
 

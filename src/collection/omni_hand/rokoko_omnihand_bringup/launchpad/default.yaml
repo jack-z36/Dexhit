@@ -15,6 +15,9 @@ parameters:
   rokoko_receiver:
     bind_address: 0.0.0.0
   hand_retargeting:
+    # Response budget: 3 * 0.02 s P3 95% rise leaves 0.14 s for
+    # complete-contract-span final slew (<= 0.2 s total).
+    smooth_time_constants: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
     recovery_confirmation_timeout_sec: 0.5
   hcan_provider:
     o10.left.transport: hcan
@@ -23,34 +26,35 @@ parameters:
     o10.left.canfd_channel_id: 0
     o10.right.transport: hcan
     o10.right.hand_device_id: 1
-    o10.right.canfd_device_id: 0
-    o10.right.canfd_channel_id: 1
+    o10.right.canfd_device_id: 1
+    o10.right.canfd_channel_id: 0
   omnihand_o10_control:
-    left.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    # Per-joint max contract span / (0.2 - 3 * 0.02) seconds.
+    left.max_joint_rates: [8.221747440645, 12.055238476275, 6.011412609369, 1.171863926339, 10.596641887108, 10.596641887108, 1.209263838882, 10.596641887108, 1.321463576510, 10.596641887108]
     left.max_time_credit: 0.1
     left.slew_compare_epsilon: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
     left.target_input_stale_timeout: 2.0
     left.target_receive_stale_timeout: 2.0
     left.control_check_period: 0.05
     left.error_poll_period: 0.2
-    left.error_query_timeout: 0.5
-    left.command_readback_timeout: 2.0
-    left.provider_heartbeat_timeout: 3.0
+    left.error_query_timeout: 2.0
+    left.command_readback_timeout: 4.0
+    left.provider_heartbeat_timeout: 5.0
     left.init_read_retry_period: 0.1
     left.init_error_retry_period: 0.1
     left.read_service_timeout: 1.0
     left.clear_fault_error_timeout: 1.0
     left.clear_fault_read_timeout: 1.0
-    right.max_joint_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    right.max_joint_rates: [8.221747440645, 12.055238476275, 6.011412609369, 1.171863926339, 10.596641887108, 10.596641887108, 1.209263838882, 10.596641887108, 1.321463576510, 10.596641887108]
     right.max_time_credit: 0.1
     right.slew_compare_epsilon: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
     right.target_input_stale_timeout: 2.0
     right.target_receive_stale_timeout: 2.0
     right.control_check_period: 0.05
     right.error_poll_period: 0.2
-    right.error_query_timeout: 0.5
-    right.command_readback_timeout: 2.0
-    right.provider_heartbeat_timeout: 3.0
+    right.error_query_timeout: 2.0
+    right.command_readback_timeout: 4.0
+    right.provider_heartbeat_timeout: 5.0
     right.init_read_retry_period: 0.1
     right.init_error_retry_period: 0.1
     right.read_service_timeout: 1.0

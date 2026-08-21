@@ -16,16 +16,25 @@ OmniHand O10
 
 ## 重要安全说明
 
-启动节点不等于允许实体手运动。本文的启动命令不会调用 `arm` Service；控制节点启动后应保持：
+> **当前实现（`4fedfaa` 起）已移除 `arm`/`disarm`，运动由新鲜合法软目标直接驱动。** 只要反馈就绪、错误监控就绪、目标就绪且目标新鲜，`motion_enabled` 即为 true，重定向节点向 `/o10_control/{side}/command` 发布的每条新目标都会驱动实体手产生命令；停止发布新目标（或目标 2 秒内不更新）即自动暂停。因此：
+
+- 启动完整真机链后，**只要戴着手套并移动手，实体手就会跟着动**。开始前必须确认实体手周围无遮挡、人员与设备安全。
+- 不要同时点亮合成输入源与真机 provider：合成假帧喂进真机链会直接驱动实体手。
+- 手动中断运动：停止向 `/o10_control/{side}/command` 发布（如收起手套、移出 Rokoko 有效区或停掉重定向节点）；若发生 `fault_latched`，先检查 `hardware_error_bits`，确认致命错误位（bit0–bit3）清零后调用 `clear_fault`。
+- 操作者唯一的操作 Service 是每侧 `/o10_control/{side}/clear_fault`；不存在 `arm`/`disarm` Service。
+
+状态观察重点（控制节点启动并读取反馈后）：
 
 ```text
-armed: false
-motion_enabled: false
+feedback_ready: true
+error_monitor_ready: true
+target_ready: true
+target_fresh: true   # 目标新鲜才允许运动
+fault_latched: false
+motion_enabled: true  # 上三项就绪且目标新鲜时为 true
 ```
 
-只有完成反馈、错误和目标状态检查，并确认实体手周围安全后，才可以单独调用左手 `arm`。
-
-当前 Provider 会同时初始化左右两侧。即使本次只 arm 左手，Provider 仍会尝试读取右手。如果只有左手实体手接入，当前实现可能因右手初始化/反馈失败而不能完成双侧 Provider 启动；不能用错误的右手参数绕过这个限制。
+当前 Provider 会同时初始化左右两侧。如果只有左手实体手接入，右手可能因无反馈而不能完成初始化；只要 Provider 进程仍在运行、左手状态满足安全条件，可继续单独观察左手，不要用错误的右手参数绕过限制。
 
 ## 方式 A：推荐的一键启动
 
@@ -51,20 +60,19 @@ ros2 node list
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-bash src/collection/omni_hand/rokoko_omnihand_bringup/scripts/start_omnihand_control.sh
+bash ./start_omnihand_control.sh
 ```
 
-脚本会依次启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点；日志写入 `/tmp/omnihand-control-<timestamp>/`。保持终端 1 运行，按 `Ctrl+C` 会停止本次脚本启动的子节点。脚本不会调用任何 `arm` Service。
+脚本会依次启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点；日志写入 `/tmp/omnihand-control-<timestamp>/`。保持终端 1 运行，按 `Ctrl+C` 会停止本次脚本启动的子节点。脚本不调用任何操作 Service（`arm`/`disarm` 已移除，也不调用 `clear_fault`）。
 
 ## 仅测试左手：推荐操作顺序
 
-如果你的目标是“只让左手参与本次测试”，请按下面的规则执行：
+如果你的目标是“只让左手参与本次测试”（且只有左手实体手接入），请按下面的规则执行：
 
-1. 仍然启动完整节点图，因为当前 Provider 会同时创建左右两个侧别；
-2. 只观察左手 Topic 和左手状态；
-3. 只调用 `/o10_control/left/arm`；
-4. 永远不要调用 `/o10_control/right/arm`；
-5. 右手出现 `read_active_joints returned 0 positions` 时，说明右手没有反馈，不要用错误的参数伪造右手；只要 Provider 进程仍在运行且左手状态满足安全条件，可以继续单独判断左手。
+1. 仍然启动完整节点图，因为当前 Provider 会同时创建左右两个侧别，且没有真正的 Provider `left_only` 模式；
+2. 只观察左手 Topic 和左手状态，不要刻意初始化右手；
+3. 由于运动由目标直接驱动，只要左手反馈就绪且目标新鲜，左手运动即自动开启；安全确认后戴上手套即可测试左手动作，无需任何 arm；
+4. 右手出现 `read_active_joints returned 0 positions` 时，说明右手没有反馈，不要用错误的参数伪造右手；只要 Provider 进程仍在运行且左手状态满足安全条件，可以继续单独观察左手。
 
 启动一键脚本后，在终端 2 或新的终端中只检查左手：
 
@@ -103,7 +111,7 @@ result_code=0
 ros2 topic echo /o10_control/left/state
 ```
 
-只有当以下字段满足条件时，才进入左手动作测试：
+确认实体手周围安全、状态满足以下条件后，才戴上手套开始左手动作测试（满足即自动运动，无需 arm）：
 
 ```text
 feedback_ready: true
@@ -111,14 +119,7 @@ error_monitor_ready: true
 target_ready: true
 target_fresh: true
 fault_latched: false
-armed: false
-motion_enabled: false
-```
-
-确认实体手周围安全后，只执行左手 arm：
-
-```bash
-ros2 service call /o10_control/left/arm rokoko_omnihand_msgs/srv/ControlOperation '{}'
+motion_enabled: true
 ```
 
 动作测试期间继续观察左手状态：
@@ -127,15 +128,15 @@ ros2 service call /o10_control/left/arm rokoko_omnihand_msgs/srv/ControlOperatio
 ros2 topic echo /o10_control/left/state
 ```
 
-如果看到 `fault_latched: true`、`hardware_error_bits` 非零或实体手动作异常，立即执行：
+如果看到 `fault_latched: true`、`hardware_error_bits` 非零（致命位 bit0–bit3）或实体手动作异常，先停止移动手套/收起手，检查硬件错误位，确认产生原因并解决后再调用左手 `clear_fault`：
 
 ```bash
-ros2 service call /o10_control/left/disarm rokoko_omnihand_msgs/srv/ControlOperation '{}'
+ros2 service call /o10_control/left/clear_fault rokoko_omnihand_msgs/srv/ControlOperation '{}'
 ```
 
-然后按 `Ctrl+C` 停止启动终端。
+确认实体手周围安全后，再戴上手套恢复测试。停止时按 `Ctrl+C` 关闭启动终端即可（本轮不再需要任何 disarm）。
 
-注意：当前实现还没有真正的 Provider `left_only` 模式。上面的流程是“完整启动图、只 arm 左手”，不是“只创建左手 Provider”。
+注意：当前实现还没有真正的 Provider `left_only` 模式。上面的流程是“完整启动图、只关注左手”，不是“只创建左手 Provider”。
 
 ## 方式 B：手动分终端启动
 
@@ -210,21 +211,21 @@ ros2 run omnihand_o10_hardware_adapter omnihand_o10_hardware_provider \
   -p o10.left.canfd_channel_id:=0 \
   -p o10.right.transport:=hcan \
   -p o10.right.hand_device_id:=1 \
-  -p o10.right.canfd_device_id:=0 \
-  -p o10.right.canfd_channel_id:=1
+  -p o10.right.canfd_device_id:=1 \
+  -p o10.right.canfd_channel_id:=0
 ```
 
 成功日志应包含：
 
 ```text
 Device 0, channel 0 opened successfully
-Device 0 channel 1 opened successfully
+Device 1, channel 0 opened successfully
 Receive thread started
 ```
 
 ### 终端 4：O10 控制节点
 
-复制粘贴下面整段命令。它只启动控制节点，不会自动 arm：
+复制粘贴下面整段命令。它只启动控制节点；运动由后续新鲜目标自动驱动，无需也不存在 `arm` 调用：
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
@@ -291,9 +292,8 @@ feedback_ready: true
 error_monitor_ready: true
 target_ready: true
 target_fresh: true
-armed: false
-motion_enabled: false
 fault_latched: false
+motion_enabled: true    # 上三项就绪且目标新鲜即 true
 ```
 
 检查左手只读反馈：
@@ -304,20 +304,22 @@ ros2 service call /o10/left/read_active_joints rokoko_omnihand_msgs/srv/ReadO10A
 
 成功时应看到 `success=True`、`result_code=0`，并返回 10 个位置。
 
-### 终端 6：只 arm 左手
+### 终端 6：故障清除
 
-只有终端 5 确认 `feedback_ready: true`、`target_ready: true`、`fault_latched: false`，且实体手周围安全时，才执行：
+自 `4fedfaa` 起不存在 `arm`/`disarm`；运动由新鲜目标直接驱动，无需授权。若终端 5 看到 `fault_latched: true` 且致命错误位（bit0–bit3）已清零、通信健康、确认实体手周围安全，可对侧别清除锁存故障：
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 source "$(git rev-parse --show-toplevel)/install/setup.bash"
 
-ros2 service call /o10_control/left/arm rokoko_omnihand_msgs/srv/ControlOperation '{}'
+ros2 service call /o10_control/left/clear_fault rokoko_omnihand_msgs/srv/ControlOperation '{}'
 ```
 
-成功时应看到 `success=True` 和 `message='armed'`。本次只调用左手，不调用右手 `arm`。
+成功时应看到 `success=True`。清除故障后运动不会立即恢复；下一条新鲜合法软目标到达时才自动恢复。若致命错误位仍非零，先解决硬件原因，不要盲目清除。
 
 ## 停止流程
+
+手动中断实体手运动：停止发布新鲜目标即可（收起手套、移出 Rokoko 有效区，或在下游停掉重定向/控制节点）；节点停止即自动停止产生命令。
 
 一键启动时回到终端 1 按 `Ctrl+C`。手动启动时依次在对应终端按 `Ctrl+C`：
 
@@ -328,21 +330,19 @@ ros2 service call /o10_control/left/arm rokoko_omnihand_msgs/srv/ControlOperatio
 终端 1：rokoko_hand_receiver
 ```
 
-如果实体手已经 arm，先执行：
-
-```bash
-ros2 service call /o10_control/left/disarm rokoko_omnihand_msgs/srv/ControlOperation '{}'
-```
+不需要也无 `disarm` 调用。
 
 ## 常见现象
 
 | 现象 | 处理 |
 | --- | --- |
 | `/rokoko/left/raw_hand` 没有频率 | 检查 Rokoko Studio IP、UDP 端口 14043 和 Actor |
+| 接收节点日志持续 `configured actor does not exist (Rokoko scene has no actor)` | Rokoko 场景里**根本没有角色**：数据虽然到了 UDP 14043，但包内 `actors` 为空。软件无数据可解。请到 Rokoko Studio 确认手套已配对/校准且场景里能看到手模型，再启动。 |
+| 接收节点日志 `actor_index=… out of range; auto-using actor index 0` | 已自动容错：配置的 `actor_index` 越界但场景里有角色，接收节点自动改用 0 号角色继续收发，**不会**丢帧。若 Data 属于另一角色，把 `actor_index` 改成该角色序号即可。 |
 | `/o10_control/left/command` 没有频率 | 查看 `/hand_retargeting/left/state` 的 `phase`、`ready` 和 `ik_state` |
 | `No module named pinocchio` | 使用终端 2 的源码 wrapper，不用 `ros2 run hand_retargeting ...` |
 | `Failed to open device` | 检查 HCAN 权限、USB-CANFD、供电和设备占用 |
-| `fault_latched: true` | 不要 arm，查看 `hardware_error_bits` |
-| `commu_except` 或数值 `16` | 检查 O10 电源、CAN 线、通道和设备状态 |
+| `fault_latched: true` | 查看 `hardware_error_bits`；确认致命位清零与通信健康后调用 `clear_fault` |
+| `commu_except` 或数值 `16` | 厂商历史通信标记（bit4），不锁存故障、不阻止控制；仍检查 O10 电源、CAN 线、通道和设备状态 |
 | `/o10/right/joint_error_cmd` 出现 `{}` | 正常的 Empty 错误查询请求 |
 | `read_active_joints returned 0 positions` | 对应侧没有读到 10 个关节反馈 |

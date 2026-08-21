@@ -58,10 +58,10 @@ omnihand_o10_control
 
 | 能力 | 验收断言 |
 | --- | --- |
-| arm/disarm/clear_fault | 幂等；拒绝优先级固定；失败不排队；fault 期间 disarm 仍可用 |
-| 授权 | arm 只改变授权；必须等下一条新目标才产生命令 |
+| 直驱使能 | 每侧反馈、错误监控、目标就绪且目标新鲜时自动使能；任一无就绪或 stale 则 `VALID_MOTION_DISABLED`，不产生命令 |
+| clear_fault | 幂等；失败不排队；成功需致命错误位清零、通信健康并重读真实位置；`4fedfaa` 起 arm/disarm 已移除 |
 | stale | 同时检查上游输入年龄和本机接收间隔；二者均为显式必填配置；进入 `PAUSED_TARGET_STALE` |
-| 故障 | 错误位、反馈/回读超时、非法反馈和重启/断连触发锁存；不自动恢复 |
+| 故障 | 错误位、反馈/回读超时、非法反馈和重启/断连触发锁存；不自动恢复；`commu_except`(bit4) 不锁存 |
 | 硬限速 | 使用真实反馈、本机单调时钟、单次额度封顶；无效目标不推进基准 |
 | slew | 非发送事件的 `slew_limited` 全为 false；发送后才更新实际命令基准 |
 | Provider | 软件 Provider 无厂商库、设备文件、CAN/USB 依赖，能确定性模拟反馈、错误和超时 |

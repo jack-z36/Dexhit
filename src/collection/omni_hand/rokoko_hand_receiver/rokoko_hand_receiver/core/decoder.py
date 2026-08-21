@@ -64,11 +64,18 @@ class RawHandFrameValue:
 
 @dataclass(frozen=True)
 class DecodeResult:
-    """Decoded frames plus explicit scene/per-side rejection diagnostics."""
+    """Decoded frames plus explicit scene/per-side rejection diagnostics.
+
+    ``actor_fallback`` is set to the actor index that was actually used when the
+    configured ``actor_index`` was out of range but at least one actor was
+    present (``actor_index`` auto-resolved to that fallback). It is ``None``
+    when the requested index was used directly.
+    """
 
     frames: dict[Side, RawHandFrameValue]
     side_rejections: dict[Side, str]
     scene_rejection: str | None = None
+    actor_fallback: int | None = None
 
 
 def _reject_scene(reason: str) -> DecodeResult:
@@ -200,9 +207,20 @@ def decode_scene(
             raise ValueError("scene.actors must be an array")
         if isinstance(actor_index, bool) or not isinstance(actor_index, int) or actor_index < 0:
             raise ValueError("actor_index must be a non-negative integer")
+        if len(actors) == 0:
+            raise ValueError(
+                "configured actor does not exist (Rokoko scene has no actor)"
+            )
         if actor_index >= len(actors):
-            raise ValueError("configured actor does not exist")
-        actor = _object(actors[actor_index], f"scene.actors[{actor_index}]")
+            # Robustness: the configured index is out of range, but the scene
+            # does carry at least one actor. Auto-resolve to the first available
+            # actor so a lane that receives data is never dropped wholesale just
+            # because the actor numbering moved. Decoding proceeds with index 0.
+            actor_fallback = 0
+            actor = _object(actors[actor_fallback], "scene.actors[0]")
+        else:
+            actor_fallback = None
+            actor = _object(actors[actor_index], f"scene.actors[{actor_index}]")
         actor_name = actor.get("name")
         if not isinstance(actor_name, str):
             raise ValueError("actor.name must be a string")
@@ -217,6 +235,7 @@ def decode_scene(
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
         return _reject_scene(str(exc))
 
+    effective_actor_index = 0 if actor_fallback is not None else actor_index
     frames: dict[Side, RawHandFrameValue] = {}
     side_rejections: dict[Side, str] = {}
     for side in ("left", "right"):
@@ -224,7 +243,7 @@ def decode_scene(
             frames[side] = _decode_side(
                 body,
                 side,
-                actor_index=actor_index,
+                actor_index=effective_actor_index,
                 actor_name=actor_name,
                 source_timestamp=source_timestamp,
                 received_at_ns=received_at_ns,
@@ -232,4 +251,4 @@ def decode_scene(
             )
         except (ValueError, TypeError) as exc:
             side_rejections[side] = str(exc)
-    return DecodeResult(frames, side_rejections)
+    return DecodeResult(frames, side_rejections, actor_fallback=actor_fallback)

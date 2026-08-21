@@ -112,6 +112,14 @@ class RokokoHandReceiverNode(Node):
         if result.scene_rejection is not None:
             self._report_rejection("scene", result.scene_rejection)
             return
+        fallback = result.actor_fallback
+        if fallback is not None and fallback != self._actor_index:
+            names = {frame.actor_name for frame in result.frames.values()}
+            name = next(iter(names)) if names else "?"
+            self.get_logger().warning(
+                f"configured actor_index={self._actor_index} out of range; "
+                f"auto-using actor index {fallback} (name={name})"
+            )
         for side, reason in result.side_rejections.items():
             self._report_rejection(side, reason)
         for side, frame in result.frames.items():

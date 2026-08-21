@@ -17,9 +17,9 @@ from ..contracts import (
     RetargetingConfig,
     RetargetingDecision,
 )
+from ..core.anatomical_correction import correct_anatomical_human_vector
 from ..core.coupling import CouplingModel
 from ..core.ik import CandidateEvidence, FingerProblem, validate_candidate
-from ..core.projection import build_projection_witness
 from ..core.normalization import (
     build_palm_frame,
     finger_chain_length,
@@ -29,6 +29,7 @@ from ..core.normalization import (
     RobotHandGeometry,
     validate_frame,
 )
+from ..core.projection import build_projection_witness
 from ..core.smoothing import LowPassFilter
 
 
@@ -146,6 +147,9 @@ class RetargetingSession:
                     continue
                 human_vector = tuple(
                     (points[3][axis] - points[0][axis]) / frozen for axis in range(3)
+                )
+                human_vector = correct_anatomical_human_vector(
+                    self.side, index, human_vector
                 )
                 mapped = self.robot_geometry.map_vector(human_vector)
                 root = self.robot_geometry.finger_roots[index]

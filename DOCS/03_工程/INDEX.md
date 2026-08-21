@@ -12,4 +12,4 @@
 - [真机 IK 残差失败判别报告](07_真机IK残差失败判别报告.md)：手套数据不出 command 的三假设判别结论（A 几何不可达）与根因证据链。
 - [Launchpad 网页一键启动遥操作系统 Spec](08_Launchpad网页一键启动遥操作系统Spec.md)：两级启动、期望状态方块网格、三级状态灯、run 会话录制证据集与双接缝测试的网页编排工具决策。
 - [Launchpad 启动器任务](launchpad/INDEX.md)：M1–M4 的 tracer-bullet tickets（T01–T12）与执行前沿。
-- [Rokoko 到 OmniHand O10 全流程启动手册](09_Rokoko到OmniHand_O10全流程启动手册.md)：一键启动与终端 0–6 手动启动、检查、arm 和停止步骤。
+- [Rokoko 到 OmniHand O10 全流程启动手册](09_Rokoko到OmniHand_O10全流程启动手册.md)：一键启动与终端 0–6 手动启动、检查、clear_fault 与停止步骤（`4fedfaa` 起 arm/disarm 已移除）。

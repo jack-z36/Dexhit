@@ -39,8 +39,6 @@ import sys
 import time
 from typing import Sequence
 
-import numpy as np
-
 # --- bootstrap: make sibling ament packages importable when run from source ---
 _OMNI_HAND_ROOT = Path(__file__).resolve().parents[2]
 for _name in ("hand_retargeting", "omnihand_o10_contracts", "omnihand_o10_model"):
@@ -60,6 +58,7 @@ from hand_retargeting.core.ik import (  # noqa: E402
     FingerProblem,
     objective_and_gradient,
 )
+import numpy as np  # noqa: E402
 from omnihand_o10_contracts import Side  # noqa: E402
 from omnihand_o10_contracts.joints import JOINT_LIMITS  # noqa: E402
 from omnihand_o10_model.contract import tip_link  # noqa: E402
@@ -84,6 +83,7 @@ DEFAULT_PARAMS = {
     "stale_timeout_sec": 0.5,
     "recovery_min_valid_frames": 3,
     "recovery_min_duration_sec": 0.1,
+    "recovery_confirmation_timeout_sec": 0.5,
 }
 
 REQUIRED_PARAM_NAMES = tuple(DEFAULT_PARAMS)
@@ -568,6 +568,7 @@ def build_config(values: dict) -> RetargetingConfig:
         tuple(values["smooth_time_constants"]),
         values["stale_timeout_sec"], values["recovery_min_valid_frames"],
         values["recovery_min_duration_sec"],
+        values["recovery_confirmation_timeout_sec"],
     )
 
 
@@ -1000,7 +1001,8 @@ def _write_markdown(payload: dict, path: Path) -> Path:
     lines.append("## Per-sample verdicts")
     lines.append("")
     lines.append(
-        "| pose | finger | frame | r_single | r_relaxed | r_ms | r_grid | σmin(G) | cond | verdict |"
+        "| pose | finger | frame | r_single | r_relaxed | r_ms | r_grid | "
+        "σmin(G) | cond | verdict |"
     )
     lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for sample in payload["results"]:
@@ -1087,7 +1089,6 @@ def run_selftest(arguments) -> int:
             )
 
         seed_q = lower + 0.3 * (upper - lower)
-        seed_problem = problem_for(np.zeros(3))
         full = np.zeros(10)
         full[list(active_indices)] = seed_q
         reachable_target = np.asarray(

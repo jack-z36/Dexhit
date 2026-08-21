@@ -59,9 +59,9 @@ JSON v3 UDP 测试源
 | 运行模块 | Owns | Must not |
 | --- | --- | --- |
 | Rokoko 接收节点 | UDP 接入、JSON v3 场景校验、Actor 选择、21 节点按名重排、左右 Raw 发布、接收统计 | 解释 O10 关节、执行人体归一化、复用坏侧历史、写 MCAP |
-| 手部重定向节点 | 运行期人体尺度、人体掌坐标、方向映射、O10 指尖目标、耦合运动学、单指 IK、历史保持、动作平滑、stale 恢复、重定向状态 | 维护 `armed`/锁存故障、访问厂商 SDK、发送最终硬件命令、写 MCAP |
-| O10 控制节点 | 软目标复核、逐侧控制状态、操作者控制授权、手侧运动许可、锁存故障、反馈初始化硬限制、最终命令效果 | 解释人体动作、订阅 `RetargetingState` 驱动安全门、导入厂商 SDK、写 MCAP |
-| 厂商硬件 Provider | 将 O10HardwarePort 映射到厂商节点、SDK 和实体设备，绑定逻辑手侧与设备 | 解释 Rokoko、运行 IK、拥有授权或安全状态机 |
+| 手部重定向节点 | 运行期人体尺度、人体掌坐标、方向映射、O10 指尖目标、耦合运动学、单指 IK、历史保持、动作平滑、stale 恢复、重定向状态 | 维护锁存故障、访问厂商 SDK、发送最终硬件命令、写 MCAP |
+| O10 控制节点 | 软目标复核、逐侧控制状态、故障清除操作、手侧运动许可、锁存故障、反馈初始化硬限制、最终命令效果 | 解释人体动作、订阅 `RetargetingState` 驱动安全门、导入厂商 SDK、写 MCAP |
+| 厂商硬件 Provider | 将 O10HardwarePort 映射到厂商节点、SDK 和实体设备，绑定逻辑手侧与设备 | 解释 Rokoko、运行 IK、拥有使能或安全状态机 |
 | 纯软件 Provider | 在测试中实现同一 O10HardwarePort，确定性模拟反馈、错误、超时、重启与断连 | 出现在生产依赖、加载厂商库、接触真实设备 |
 | 外部 rosbag2/MCAP | 订阅并记录已声明 Topic | 反向驱动控制、覆盖既有 `raw MCAP` |
 
@@ -103,8 +103,8 @@ Ports 是 Application/Core 所依赖的抽象能力，Adapter 实现 Port；Port
 | --- | --- | --- | --- |
 | Types / Contracts | 逻辑手侧、固定主动关节语义、限位、纯值对象、事件/效果数据结构（即 `omnihand_o10_contracts`）；ROS `.msg/.srv` wire schema 属独立构建期接口包 `rokoko_omnihand_msgs`，不在本运行时层内 | 使用标准库与纯类型依赖 | 导入 `rclpy`、Pinocchio、NLopt、厂商代码；拥有运行状态或算法 |
 | Core / Domain | 人体几何、长度统计、耦合求值/雅可比、损失与候选判定、低通滤波、硬限速、纯安全谓词 | 依赖纯 Contracts 和数值基础库；接收显式时间和值 | 导入 ROS 消息、`rclpy`、launch、UDP、文件系统、ament index、厂商 SDK；发布 Topic |
-| Application / Orchestration | 每侧会话状态、阶段转换、IK 调度、stale 恢复候选区、授权/故障状态机、事件到效果的原子转换 | 依赖 Core、Contracts 和 Port；接收 Adapter 产生的事件 | 导入厂商 SDK、CAN/USB、测试 Provider；直接构造或发布 ROS 消息；共享左右可变状态 |
-| ROS Runtime & Adapters | Node 生命周期、QoS、参数、ROS message↔value object 转换、UDP socket、ROS/单调时钟、Pinocchio/NLopt/资产 Provider、Port 效果执行 | 依赖 Application/Core/Contracts/接口消息与外部库 | 拥有 IK/授权/故障规则；在回调中复制业务状态机；被内层导入 |
+| Application / Orchestration | 每侧会话状态、阶段转换、IK 调度、stale 恢复候选区、使能/故障状态机、事件到效果的原子转换 | 依赖 Core、Contracts 和 Port；接收 Adapter 产生的事件 | 导入厂商 SDK、CAN/USB、测试 Provider；直接构造或发布 ROS 消息；共享左右可变状态 |
+| ROS Runtime & Adapters | Node 生命周期、QoS、参数、ROS message↔value object 转换、UDP socket、ROS/单调时钟、Pinocchio/NLopt/资产 Provider、Port 效果执行 | 依赖 Application/Core/Contracts/接口消息与外部库 | 拥有 IK/使能/故障规则；在回调中复制业务状态机；被内层导入 |
 | Composition / External | launch、生产/测试 composition、厂商节点和 SDK、rosbag2、运行环境 | 依赖运行包，选择 Provider 并注入配置 | 被业务包导入；把测试 Provider 带入生产 composition；保存第二份业务事实 |
 
 纯核心的判定标准是：导入并测试它不需要初始化 ROS、不需要模型安装空间、不需要网络或硬件。Pinocchio、NLopt 和 ament 资产查找属于 Adapter；数学公式、耦合系数的已解析表示和状态转换属于 Core/Application。
@@ -141,13 +141,13 @@ src/collection/
 | `omnihand_o10_contracts` | `Side`、10 主动关节名称/索引/左右限位，以及跨重定向、控制和 Provider 使用的纯关节目标/反馈/错误/时间值对象 | Python 标准库；必要时仅类型依赖 | 拥有 O10HardwarePort 能力、控制事件/效果或会话状态；导入 ROS、模型、Pinocchio/NLopt、厂商或测试代码 |
 | `omnihand_o10_model` | 左右生成态 URDF、左右 MJCF、provenance、SHA-256；不含节点 | ament 资源安装依赖 | 含 Xacro 运行路径、场景/网格必需依赖、外部绝对路径或运行算法；许可未确认时正式 vendoring |
 | `rokoko_hand_receiver` | JSON decoder、Actor/手侧验证、21 节点重排、UDP/ROS runtime、Raw QoS、接收诊断 | `rokoko_omnihand_msgs`；ROS runtime；标准网络/JSON 库 | 依赖 O10 Contracts、模型、重定向或控制包；解释 O10 语义 |
-| `hand_retargeting` | 人体归一化、模型装载 Adapter、耦合、单指 IK、动作平滑、stale 会话、RetargetingState 和软目标 runtime | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、`omnihand_o10_model`、Pinocchio/NLopt/数值库、ROS runtime | 依赖控制包、厂商节点/SDK、测试包；拥有 `armed`/锁存故障；发送最终命令 |
-| `omnihand_o10_control` | 软目标验证、控制会话、O10HardwarePort 能力及纯控制事件/效果、授权/故障、硬限速、控制状态和操作 Service runtime | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、ROS runtime | manifest 或源码依赖 `omnihand_node`/厂商 SDK、重定向包或测试 Provider；订阅 RetargetingState 驱动控制 |
-| `omnihand_o10_hardware_adapter` | 生产 O10HardwarePort wire Provider；把标准最终命令、反馈、错误查询与无动作主动关节读取映射到厂商节点/SDK | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、标准 ROS 消息、`omnihand_node`/经批准 SDK、ROS runtime | 被控制 Core/Application 导入；拥有授权/故障/限速；解释人体动作；被无真机测试加载 |
+| `hand_retargeting` | 人体归一化、模型装载 Adapter、耦合、单指 IK、动作平滑、stale 会话、RetargetingState 和软目标 runtime | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、`omnihand_o10_model`、Pinocchio/NLopt/数值库、ROS runtime | 依赖控制包、厂商节点/SDK、测试包；拥有锁存故障；发送最终命令 |
+| `omnihand_o10_control` | 软目标验证、控制会话、O10HardwarePort 能力及纯控制事件/效果、故障清除、硬限速、控制状态和 clear_fault Service runtime | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、ROS runtime | manifest 或源码依赖 `omnihand_node`/厂商 SDK、重定向包或测试 Provider；订阅 RetargetingState 驱动控制 |
+| `omnihand_o10_hardware_adapter` | 生产 O10HardwarePort wire Provider；把标准最终命令、反馈、错误查询与无动作主动关节读取映射到厂商节点/SDK | `rokoko_omnihand_msgs`、`omnihand_o10_contracts`、标准 ROS 消息、`omnihand_node`/经批准 SDK、ROS runtime | 被控制 Core/Application 导入；拥有故障/限速；解释人体动作；被无真机测试加载 |
 | `rokoko_omnihand_bringup` | 生产 launch、参数文件定位、三业务节点与生产 Provider composition | 三业务运行包、生产硬件 Adapter、接口/资产包 | 包含业务规则、算法、测试 Provider；成为其他业务包依赖 |
 | `rokoko_omnihand_system_test` | 纯软件 Provider、JSON fixtures、无真机 launch test、MCAP/端到端行为测试 | `rokoko_hand_receiver`、`hand_retargeting`、`omnihand_o10_control`、公开接口/Contracts/资产包和测试工具 | 依赖或加载 `omnihand_o10_hardware_adapter`、厂商节点/SDK/设备库；被任何生产包依赖；出现在生产 launch |
 | `rokoko_omnihand_architecture_test` | 解析 package manifests/imports/launch 声明，执行本文跨包门禁 | 源码树元数据与测试工具 | 被生产包依赖；承载业务行为测试 |
-| `rokoko_omnihand_launchpad` | 本机 FastAPI 控制面、无业务副作用的 `rclpy` spin、Vue/ECharts 静态前端、单实例锁和后续设备进程编排边界；T01 不启动业务节点 | FastAPI/uvicorn、rclpy、前端构建工具；后续按模式选择四个业务包，`rokoko_omnihand_system_test` 仅 mock 模式 | 导入业务内部状态、暴露 arm/disarm/clear_fault；真机模式引用 `system_test`；被业务包反向依赖 |
+| `rokoko_omnihand_launchpad` | 本机 FastAPI 控制面、无业务副作用的 `rclpy` spin、Vue/ECharts 静态前端、单实例锁和后续设备进程编排边界；T01 不启动业务节点 | FastAPI/uvicorn、rclpy、前端构建工具；后续按模式选择四个业务包，`rokoko_omnihand_system_test` 仅 mock 模式 | 导入业务内部状态、暴露 clear_fault；真机模式引用 `system_test`；被业务包反向依赖 |
 
 每个业务包内部使用同一命名规则：
 
@@ -292,7 +292,7 @@ flowchart TD
 | `/hand_retargeting/{left,right}/state` | `RetargetingState`；事件驱动、逐指尺度/IK/残差/恢复，只读诊断 | 手部重定向节点；wire type 由 `rokoko_omnihand_msgs` 拥有 |
 | `/o10_control/{left,right}/command` | `JointState`；固定 10 name、rad 软目标、Raw 接收 stamp、空 velocity/effort | 手部重定向节点发布；O10 控制节点消费并独立复核 |
 | `/o10_control/{left,right}/state` | `O10ControlState`；事件驱动、安全门、目标结果、限速与故障，只读诊断 | O10 控制节点；wire type由 `rokoko_omnihand_msgs` 拥有 |
-| `/o10_control/{side}/{arm,disarm,clear_fault}` | `ControlOperation`；空请求，返回结果码、说明和原子状态快照 | O10 控制节点；wire type 由 `rokoko_omnihand_msgs` 拥有 |
+| `/o10_control/{side}/clear_fault` | `ControlOperation`；空请求，返回结果码、说明和原子状态快照。运动由目标直接驱动，不再有 arm/disarm | O10 控制节点；wire type 由 `rokoko_omnihand_msgs` 拥有 |
 | `/o10/{left,right}/joint_cmd` | `JointState`；最终受限 `position[10]`，保留 header，其他数组为空 | O10 控制节点产生；O10HardwarePort Provider 消费 |
 | `/o10/{left,right}/joint_states` | 10 维主动关节反馈及接收时间语义 | O10HardwarePort Provider 产生；控制节点消费 |
 | `/o10/{left,right}/joint_error_cmd` / `joint_error_states` | 主动查询与 10 关节厂商错误位 | O10HardwarePort Provider；控制节点拥有轮询策略 |
@@ -349,7 +349,7 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 | Raw 接收时间 | Rokoko 接收 runtime 在 UDP ingress 创建；下游只继承 |
 | 每侧人体长度窗口、冻结值、上一有效单指目标、恢复候选和动作平滑滤波状态 | `hand_retargeting` 对应侧 Application aggregate |
 | O10 几何、frame、指根、指链长度与耦合来源 | `omnihand_o10_model` 资产；`hand_retargeting` Model Adapter 解析，不复制常量 |
-| 每侧 `armed`、`fault_latched`、目标新鲜度、错误监控、限速基准和时间基准 | `omnihand_o10_control` 对应侧 Application aggregate |
+| 每侧 `fault_latched`、目标新鲜度、错误监控、限速基准和时间基准 | `omnihand_o10_control` 对应侧 Application aggregate |
 | `motion_enabled` | O10 控制 Application 从自有状态派生，只读 |
 | 设备 ID、连接方式、通道和厂商 SDK 生命周期 | 生产 O10HardwarePort Provider 配置 |
 | 厂商节点/SDK 到 O10HardwarePort wire contract 的映射 | `omnihand_o10_hardware_adapter` |
@@ -379,14 +379,14 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 | A11 | O10 主动关节名称、索引和限位 MUST 只有 `omnihand_o10_contracts` 一个代码 owner | Python AST 扫描禁止其他包定义同名常量；contract imports test | `test_o10_contract_single_source` | ENFORCED |
 | A12 | URDF/MJCF/provenance MUST 从 ROS 安装空间加载，MUST NOT 使用开发者绝对路径 | 资产结构/hash test + Python AST 字符串扫描 + 临时安装空间启动测试 | `test_model_asset_boundary` | ENFORCED；固定外部资产当前不可下载 |
 | A13 | Pinocchio/NLopt MUST 只出现在重定向 Adapter，MUST NOT 泄漏到 Contracts、Core/Application API | Python import lint + public signature introspection | `test_numeric_backends_are_adapters` | ENFORCED |
-| A14 | 控制业务状态转换 MUST 只发生在每侧 Control Application aggregate；ROS Node 不得保存第二份授权/故障/限速状态机 | 状态字段命名/source scan只能发现部分违规 | reviewer checklist：Node 只转换消息/执行 effects；无重复状态字段 | manual review only |
+| A14 | 控制业务状态转换 MUST 只发生在每侧 Control Application aggregate；ROS Node 不得保存第二份使能/故障/限速状态机 | 状态字段命名/source scan只能发现部分违规 | reviewer checklist：Node 只转换消息/执行 effects；无重复状态字段 | manual review only |
 | A15 | 重定向每侧状态 MUST 由独立 aggregate 拥有，左右 MUST NOT 共享可变历史 | 构造两侧 session 的身份/变更隔离结构测试 | `test_side_aggregate_isolation` | ENFORCED |
 | A16 | ROS `.msg/.srv` numeric enums 和字段 MUST 只在接口包定义，消费者不得复制 numeric literals | generated interface contract test + Python source scan | `test_wire_contract_single_source` | ENFORCED |
 | A17 | 业务包 MUST NOT 创建 `utils`/`common` 跨包依赖汇 | 路径和 Python import lint | `test_no_dependency_dumping_ground` | ENFORCED |
 | A18 | 安全/性能未标定参数 MUST 是显式必需配置，MUST NOT 伪装成真机安全默认值 | 参数 schema test：缺失时启动失败；来源元数据检查 | `test_required_experimental_parameters` | ENFORCED；参数是否安全仍需 manual review |
 | A19 | `src/collection/omni_hand/jazzy/` MUST 作为外部安装产物，不得成为源码 import、绝对路径或受管包 owner | manifest/import/path lint；构建在干净外部 prefix 复现 | `test_vendor_prefix_is_external` | ENFORCED |
 | A20 | 生产 composition MUST 只包含三个 Dexhit 业务节点、允许的生产 Provider/shim 和外部厂商节点；任何测试包或纯软件 Provider MUST NOT 出现 | launch structure test + executable/package allowlist inventory | `test_production_business_node_inventory` | ENFORCED；厂商 Provider/shim 进程不计为业务节点 |
-| A21 | 硬件 Adapter、bringup、消息、资产和测试包 MUST NOT 拥有授权、故障、IK、stale 或限速业务状态 | reviewer checklist：逐包检查 state fields、callbacks 和 lifecycle ownership | reviewer checklist | manual review only |
+| A21 | 硬件 Adapter、bringup、消息、资产和测试包 MUST NOT 拥有运动使能（`4fedfaa` 起无 `armed`）、故障、IK、stale 或限速业务状态 | reviewer checklist：逐包检查 state fields、callbacks 和 lifecycle ownership | reviewer checklist | manual review only |
 | A22 | Phase 1 Dexhit 自有运行包 MUST 使用 Python 3/`ament_python`；若引入 C++，必须先加入 include/CMake/link 门禁并更新 ADR | manifest build_type/executable inventory test | `test_owned_runtime_language_policy` | ENFORCED |
 | A23 | Launchpad MUST be a sibling package under `src/collection`, MUST bind its T01 control plane to `127.0.0.1:8710`, and MUST NOT start business nodes | package/source boundary test plus T01 black-box HTTP test | `test_launchpad_skeleton_boundary` | ENFORCED |
 | A24 | Launchpad MUST NOT make production composition depend on `rokoko_omnihand_system_test`; only a mock-mode adapter may reference that package | manifest/import/source scan; mode-specific composition test in later ticket | `test_production_excludes_test_provider` plus launchpad boundary gate | ENFORCED for T01 skeleton; mock-mode behavior pending |
@@ -415,7 +415,7 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 
 - JSON v3/RawHandFrame 解析、逐侧坏包隔离和 QoS；
 - 人体归一化、长度冻结、耦合、单指 IK、解析梯度、动作平滑和 stale 恢复；
-- 操作者控制授权、手侧运动许可、锁存故障、清除流程和最终关节变化率硬限制；
+- 手侧运动使能、锁存故障、清除流程和最终关节变化率硬限制；
 - 从 UDP 到纯软件 Provider 的完整 ROS 图、状态 Topic、Service、MCAP 可录制性与吞吐基准。
 
 行为测试不得为了方便绕过公开 seam 去断言 Node 私有调用。纯数学的梯度/资产测试是必要的离线契约检查；它们不扩大生产 public API。

@@ -17,11 +17,11 @@ model = "gpt-5.6-luna"
 reasoning_effort = "medium"
 
 [analyst]
-model = "deepseek/deepseek-v4-pro"
+model = "gpt-5.6-sol"
 reasoning_effort = "high"
 
 [solution_planner]
-model = "zai/glm-5.3"
+model = "gpt-5.6-sol"
 reasoning_effort = "high"
 
 [executor]

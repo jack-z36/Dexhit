@@ -120,10 +120,10 @@ flowchart LR
 
 - [x] 分层重构为 contracts/core/application/adapters/node，去除 `omnihand_node` manifest/源码依赖（A04 gate 已通过）。
 - [x] `O10HardwarePort` 事件/效果边界；runtime 是唯一 effects executor，成功发送后才回送成功事件推进基准。
-- [x] 逐侧 `armed`/`fault_latched`/硬限速状态机；启动 `armed=false`，运动许可为只读派生合取。
+- [x] 逐侧 `fault_latched`/硬限速状态机；运动使能为只读派生合取（`4fedfaa` 起 arm/disarm 已移除，运动由新鲜目标直接驱动）。
 - [x] 硬限速：真实反馈初始化 + 单调时钟 + 单次时间额度封顶；无效目标不推进基准。
-- [x] `arm`/`disarm`/`clear_fault` Service + 固定拒绝优先级；失败不排队，重复幂等。
-- [x] 锁存故障：错误位/回读超时/非法反馈/重启断连触发，撤销授权，不自动恢复。
+- [x] `clear_fault` Service + 固定拒绝优先级；`arm`/`disarm` 随门控移除而删除；失败不排队，重复幂等。
+- [x] 锁存故障：错误位/回读超时/非法反馈/重启断连触发，停止运动，不自动恢复。
 - [x] 输出 `/o10/{side}/joint_cmd`，header 保留、name/velocity/effort 为空。
 - [x] 软件 Provider 无厂商依赖，可注入确定性反馈/错误/超时/重启/断连（A09 gate 已通过）。
 - [x] 保留并升级现有 ROS 图测试为 prior art；T07 控制包 65 tests、ROS 图 6/6 通过。

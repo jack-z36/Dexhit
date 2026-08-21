@@ -26,7 +26,8 @@ def build_projection_witness(
     coupling: CouplingModel,
     kinematics: FingerKinematics,
 ) -> ProjectionWitness:
-    """Turn a usable raw-target candidate into a model-observable target.
+    """
+    Turn a usable raw-target candidate into a model-observable target.
 
     This is deliberately not a global nearest-point solver.  The candidate is
     supplied by the existing bounded single-start optimizer; the witness is

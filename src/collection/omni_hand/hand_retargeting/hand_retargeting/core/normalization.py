@@ -128,7 +128,8 @@ def build_palm_frame(
     raw_x = (
         _sub(positions[5], positions[17])
         if side is Side.RIGHT
-        else _sub(positions[17], positions[5])
+        # Both sides use anatomical +X from little-finger root to index root.
+        else _sub(positions[5], positions[17])
     )
     orthogonal_x = _sub(raw_x, _scale(_dot(raw_x, y_axis), y_axis))
     x_axis = _unit(orthogonal_x, config.palm_x_epsilon, "palm transverse axis")

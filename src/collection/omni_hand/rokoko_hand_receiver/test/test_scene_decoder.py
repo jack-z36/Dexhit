@@ -53,7 +53,7 @@ def test_complete_scene_is_reordered_without_changing_source_values():
         (b"not json", 0),
         (b'{"version":2,"scene":{"timestamp":1,"actors":[]}}', 0),
         (b'{"version":3,"scene":{"timestamp":NaN,"actors":[]}}', 0),
-        (FIXTURE.read_bytes(), 1),
+        (b'{"version":3,"scene":{"timestamp":1,"actors":[]}}', 0),
     ],
     ids=("invalid-json", "wrong-version", "invalid-source-time", "actor-absent"),
 )
@@ -64,6 +64,31 @@ def test_scene_error_rejects_both_sides(payload, actor_index):
 
     assert result.frames == {}
     assert result.scene_rejection is not None
+
+
+def test_out_of_range_actor_index_auto_resolves_to_first_actor():
+    from rokoko_hand_receiver.core.decoder import decode_scene
+
+    # The fixture carries exactly one actor. A configured index that is too
+    # high (e.g. 1) must NOT drop the stream: it auto-resolves to actor 0.
+    result = decode_scene(FIXTURE.read_bytes(), actor_index=1, received_at_ns=42)
+
+    assert result.scene_rejection is None
+    assert result.actor_fallback == 0
+    assert set(result.frames) == {"left", "right"}
+    for side, frame in result.frames.items():
+        assert frame.actor_index == 0
+        assert frame.actor_name == "DexhitFixtureActor"
+
+
+def test_in_range_actor_index_uses_requested_index_directly():
+    from rokoko_hand_receiver.core.decoder import decode_scene
+
+    result = decode_scene(FIXTURE.read_bytes(), actor_index=0, received_at_ns=42)
+
+    assert result.scene_rejection is None
+    assert result.actor_fallback is None
+    assert result.frames["left"].actor_index == 0
 
 
 @pytest.mark.parametrize(

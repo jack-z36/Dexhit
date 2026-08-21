@@ -2,7 +2,10 @@ import math
 
 from hand_retargeting.application.session import RetargetingSession
 from hand_retargeting.contracts import RawHandFrameValue, RetargetingConfig
-from hand_retargeting.core.normalization import RobotHandGeometry
+from hand_retargeting.core.normalization import (
+    build_palm_frame,
+    RobotHandGeometry,
+)
 from omnihand_o10_contracts import Side
 import pytest
 
@@ -198,6 +201,35 @@ def test_direction_mapping_multiplies_like_a_fixed_rotation_matrix():
     assert geometry.map_vector((1.0, 0.0, 0.0)) == pytest.approx((0.0, 1.0, 0.0))
     assert geometry.map_vector((0.0, 1.0, 0.0)) == pytest.approx((-1.0, 0.0, 0.0))
     assert geometry.map_vector((0.0, 0.0, 1.0)) == pytest.approx((0.0, 0.0, 1.0))
+
+
+def test_left_palm_basis_uses_anatomical_little_to_index_and_palm_normal():
+    """The left palm basis must preserve +X and +Z for canonical anatomy.
+
+    This fixture defines +X from the little-finger root toward the index-finger
+    root, +Y from the palm toward the fingers, and +Z as +X cross +Y.  The
+    expected basis is independent of the implementation's left/right branch;
+    it catches a left-only raw_x/cross sign inversion directly at the public
+    palm-frame seam.
+    """
+    frame = _frame(Side.LEFT)
+    positions = list(frame.positions)
+    roots = (0.8, 0.6, 0.2, -0.2, -0.6)
+    # Use the same world-side geometry for this semantic fixture: index is +X
+    # and little is -X, so little -> index is the positive anatomical axis.
+    positions[0] = (0.0, 0.0, 0.0)
+    for root_index, root_x in zip((1, 5, 9, 13, 17), roots):
+        for offset, y in enumerate((1.0, 1.4, 1.8, 2.2)):
+            positions[root_index + offset] = (root_x, y, 0.0)
+    canonical = RawHandFrameValue(frame.node_names, tuple(positions), 123)
+
+    palm = build_palm_frame(canonical.positions, Side.LEFT, _config())
+
+    for actual, expected in zip(
+        palm.axes,
+        ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    ):
+        assert actual == pytest.approx(expected)
 
 
 def test_robot_geometry_rejects_non_orthonormal_mapping():

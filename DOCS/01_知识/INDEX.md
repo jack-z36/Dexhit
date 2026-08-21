@@ -9,7 +9,7 @@
 - [Rokoko 原始手部帧 ROS 接口契约](04_Rokoko原始手部帧ROS接口契约.md)：接收节点到重定向节点的 RawHandFrame 字段、双侧 Topic、时间坐标和 21 节点顺序。
 - [手部重定向状态 ROS 接口契约](05_手部重定向状态ROS接口契约.md)：逐侧 RetargetingState 的阶段、逐指尺度/IK、残差、求解器和恢复进度语义。
 - [O10 控制状态 ROS 接口契约](06_O10控制状态ROS接口契约.md)：逐侧 O10ControlState 的独立安全门、阶段、目标处理、硬限速、故障位和时间语义。
-- [O10 操作者控制操作 ROS 接口契约](07_O10操作者控制操作ROS接口契约.md)：逐侧 arm、disarm、clear_fault Service 的共用请求—应答外壳、原子性和状态快照语义。
+- [O10 操作者控制操作 ROS 接口契约](07_O10操作者控制操作ROS接口契约.md)：运动由新鲜合法目标直接驱动（arm/disarm 门控已移除），仅 clear_fault Service 保留的状态转换语义。
 - [Collection 运行环境与真机前置条件](07_Collection运行环境与真机前置条件.md)：Python 数值环境、ROS setup、Launchpad 控制面和 OmniHand O10 上位机连接前置条件。
 - [Codebase Architecture](ARCHITECTURE.md)：Rokoko 到 OmniHand O10 实时手部遥操作系统的运行时上下文、代码层级、ROS 包边界、依赖 DAG、Port/Provider、状态所有权和可机械执行的架构门禁。
 - [O10 架构决策](ADR/INDEX.md)：O10 控制链中难以逆转且需要保留理由的架构选择。

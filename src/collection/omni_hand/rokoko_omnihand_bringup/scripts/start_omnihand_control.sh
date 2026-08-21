@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# DEPRECATED: use the Launchpad web flow and its real-node preflight instead.
-# This legacy launcher is retained because it is an existing untracked
-# operator artifact; it is not deleted by T05 and remains outside the new
-# orchestrator's source of truth.
+# Compatibility implementation for the canonical repository-root entrypoint:
+#   ./start_omnihand_control.sh
+# Agents and operators must use the root entrypoint. This package-local path
+# remains valid for existing ROS/package documentation and tooling.
 
 # Start the complete Rokoko -> O10 software/hardware graph.
 #
@@ -158,6 +158,7 @@ start_node "hand_retargeting" \
   bash "$RETARGET_WRAPPER" \
     --ros-args \
     --params-file "$RETARGET_PARAMS" \
+    -p 'smooth_time_constants:=[0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02]' \
     -p recovery_confirmation_timeout_sec:=0.5
 wait_for_node /hand_retargeting
 
@@ -170,39 +171,39 @@ start_node "omnihand_o10_hardware_provider" \
     -p o10.left.canfd_channel_id:=0 \
     -p o10.right.transport:=hcan \
     -p o10.right.hand_device_id:=1 \
-    -p o10.right.canfd_device_id:=0 \
-    -p o10.right.canfd_channel_id:=1
+    -p o10.right.canfd_device_id:=1 \
+    -p o10.right.canfd_channel_id:=0
 sleep 2
 wait_for_processes
 wait_for_node /omnihand_o10_hardware_provider
 
 CONTROL_PARAMS=(
   --ros-args
-  -p 'left.max_joint_rates:=[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]'
+  -p 'left.max_joint_rates:=[8.221747440645,12.055238476275,6.011412609369,1.171863926339,10.596641887108,10.596641887108,1.209263838882,10.596641887108,1.321463576510,10.596641887108]'
   -p left.max_time_credit:=0.1
   -p 'left.slew_compare_epsilon:=[0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001]'
   -p left.target_input_stale_timeout:=2.0
   -p left.target_receive_stale_timeout:=2.0
   -p left.control_check_period:=0.05
   -p left.error_poll_period:=0.2
-  -p left.error_query_timeout:=0.5
-  -p left.command_readback_timeout:=2.0
-  -p left.provider_heartbeat_timeout:=3.0
+  -p left.error_query_timeout:=2.0
+  -p left.command_readback_timeout:=4.0
+  -p left.provider_heartbeat_timeout:=5.0
   -p left.init_read_retry_period:=0.1
   -p left.init_error_retry_period:=0.1
   -p left.read_service_timeout:=1.0
   -p left.clear_fault_error_timeout:=1.0
   -p left.clear_fault_read_timeout:=1.0
-  -p 'right.max_joint_rates:=[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]'
+  -p 'right.max_joint_rates:=[8.221747440645,12.055238476275,6.011412609369,1.171863926339,10.596641887108,10.596641887108,1.209263838882,10.596641887108,1.321463576510,10.596641887108]'
   -p right.max_time_credit:=0.1
   -p 'right.slew_compare_epsilon:=[0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001]'
   -p right.target_input_stale_timeout:=2.0
   -p right.target_receive_stale_timeout:=2.0
   -p right.control_check_period:=0.05
   -p right.error_poll_period:=0.2
-  -p right.error_query_timeout:=0.5
-  -p right.command_readback_timeout:=2.0
-  -p right.provider_heartbeat_timeout:=3.0
+  -p right.error_query_timeout:=2.0
+  -p right.command_readback_timeout:=4.0
+  -p right.provider_heartbeat_timeout:=5.0
   -p right.init_read_retry_period:=0.1
   -p right.init_error_retry_period:=0.1
   -p right.read_service_timeout:=1.0

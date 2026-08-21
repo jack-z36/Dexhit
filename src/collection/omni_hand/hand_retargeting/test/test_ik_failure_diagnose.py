@@ -57,6 +57,7 @@ def _config(**changes):
         "stale_timeout_sec": 0.5,
         "recovery_min_valid_frames": 2,
         "recovery_min_duration_sec": 0.1,
+        "recovery_confirmation_timeout_sec": 0.5,
     }
     values.update(changes)
     return RetargetingConfig(**values)
@@ -328,6 +329,7 @@ def test_parse_ros_params_extracts_required_keys_and_reports_missing(tmp_path):
         "stale_timeout_sec": 0.5,
         "recovery_min_valid_frames": 3,
         "recovery_min_duration_sec": 0.1,
+        "recovery_confirmation_timeout_sec": 0.5,
     }
     path = tmp_path / (str(uuid.uuid4()) + ".yaml")
     path.write_text(
@@ -434,10 +436,11 @@ def test_real_replay_reproduces_field_like_thumb_failure():
         frames, config, "right", stack.coupling, stack.kinematics, stack.geometry
     )
     last = decisions[-1]
-    assert last.ik_state[0] == "residual-exceeded"
-    assert last.has_valid_ik[0] is False
+    assert last.ik_state[0] == "valid"
+    assert last.has_valid_ik[0] is True
     assert all(last.has_valid_ik[index] for index in range(1, 5))
-    assert last.command_published is False
+    assert last.target_projection_applied[0] is True
+    assert last.command_published is True
     thumb_records = [r for r in records if r.finger_index == 0]
     assert thumb_records
     assert all(r.residual > 0.05 for r in thumb_records)

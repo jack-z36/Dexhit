@@ -68,6 +68,49 @@ def ros_graph():
         rclpy.shutdown()
 
 
+def test_loopback_out_of_range_actor_index_still_publishes_both_sides():
+    from rokoko_hand_receiver.node import RokokoHandReceiverNode
+
+    port = _available_udp_port()
+    rclpy.init()
+    receiver = RokokoHandReceiverNode(
+        parameter_overrides=[
+            Parameter("bind_address", value="127.0.0.1"),
+            Parameter("udp_port", value=port),
+            # The fixture carries exactly one actor; a configured index that is
+            # out of range must auto-resolve instead of dropping every scene.
+            Parameter("actor_index", value=7),
+        ]
+    )
+    observer = Node("rokoko_hand_receiver_test_observer")
+    executor = SingleThreadedExecutor()
+    executor.add_node(receiver)
+    executor.add_node(observer)
+    left_messages = []
+    right_messages = []
+    observer.create_subscription(
+        RawHandFrame, "/rokoko/left/raw_hand", left_messages.append, 10
+    )
+    observer.create_subscription(
+        RawHandFrame, "/rokoko/right/raw_hand", right_messages.append, 10
+    )
+    try:
+        _send(port, FIXTURE.read_bytes())
+        assert _spin_until(
+            executor, lambda: len(left_messages) == 1 and len(right_messages) == 1
+        )
+        assert left_messages[0].actor_name == "DexhitFixtureActor"
+        assert left_messages[0].actor_index == 0
+        assert right_messages[0].actor_name == "DexhitFixtureActor"
+    finally:
+        executor.remove_node(observer)
+        executor.remove_node(receiver)
+        observer.destroy_node()
+        receiver.destroy_node()
+        executor.shutdown()
+        rclpy.shutdown()
+
+
 def test_loopback_fixture_publishes_both_sides_with_shared_receive_time(ros_graph):
     port, _, observer, executor = ros_graph
     left_messages = []

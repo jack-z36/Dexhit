@@ -22,7 +22,7 @@
 
 每次启动自动形成 run 会话目录：节点日志、参数与方块清单快照、事件标记总是留存；勾选开录后追加覆盖全部公开 topic 与 /rosout 的 MCAP 录制和系统资源采样。事后仅凭一个 run 目录即可离线分解每跳延迟、定位数据中断的责任环节。
 
-安全底线：网页不暴露 arm/disarm/clear_fault，授权仍由操作者在终端显式完成；编排器以任何方式死亡（含 kill -9）时所有业务节点跟随退出，绝不留真机悬空运行；节点崩溃只告警，不自动拉起。
+安全底线：网页不暴露任何操作/授权 Service（自 `4fedfaa` 起 arm/disarm 已移除，运动由新鲜目标直接驱动；网页亦不暴露 clear_fault）；启动真机链即允许在反馈就绪、错误监控就绪且目标新鲜时运动，因此戴手套前必须确认实体手周围安全并保证只连接真机 provider；编排器以任何方式死亡（含 kill -9）时所有业务节点跟随退出，绝不留真机悬空运行；节点崩溃只告警，不自动拉起。
 
 ## User Stories
 
@@ -62,7 +62,7 @@
 34. As an 诊断者, I want 1Hz 的 CPU 与内存采样进入 run 目录, so that "卡顿其实是机器满了"可以被证实或排除。
 35. As an 诊断者, I want 仅凭一个 run 目录就能离线定位链路数据中断的责任环节, so that 不需要复现现场。
 36. As an 操作者, I want run 历史页显示各 run 大小并支持手动删除, so that 磁盘管理是显式动作。
-37. As an 操作者, I want 网页不暴露 arm/disarm/clear_fault, so that 唯一让真机动起来的授权仍由我在终端显式完成。
+37. As an 操作者, I want 网页不暴露任何操作/授权 Service（arm/disarm 已移除，也不暴露 clear_fault）, so that 运动由新鲜目标直接驱动，真机运动完全由我在终端启动的 Provider 决定。
 38. As an 操作者, I want 编排器无论以何种方式死亡所有节点都跟随退出, so that 控制面崩溃不会留下真机悬空运行。
 39. As an 维护者, I want 单实例锁防止第二个编排器启动, so that 不会出现双编排器抢管节点。
 40. As an 诊断者, I want 数据链路模式（只启动接收与重定向，数据到 command 为止）, so that 不碰硬件就能验证手套到重定向的质量。
@@ -156,7 +156,7 @@
 ## Out of Scope
 
 - 3D 手部可视化。
-- 网页暴露 arm/disarm/clear_fault 或任何授权操作。
+- 网页暴露任何操作/授权 Service（arm/disarm 已移除，clear_fault 亦不暴露）。
 - 节点崩溃自动拉起与自动恢复。
 - receiver UDP 错误计数的 topic 化（涉及业务节点改动，v2 再评估）。
 - 60+ 业务参数的网页表单编辑。

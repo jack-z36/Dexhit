@@ -9,8 +9,8 @@ from hand_retargeting.contracts import RawHandFrameValue, RetargetingConfig
 from hand_retargeting.core.coupling import CouplingModel
 from hand_retargeting.core.ik import FingerProblem, objective_and_gradient
 from hand_retargeting.core.ik import validate_candidate
-from hand_retargeting.core.projection import build_projection_witness
 from hand_retargeting.core.normalization import RobotHandGeometry
+from hand_retargeting.core.projection import build_projection_witness
 import numpy as np
 from omnihand_o10_contracts import JOINT_LIMITS, Side
 import pytest

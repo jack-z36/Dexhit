@@ -26,9 +26,9 @@ parameters:
     left.target_receive_stale_timeout: 2.0
     left.control_check_period: 0.05
     left.error_poll_period: 0.2
-    left.error_query_timeout: 0.5
-    left.command_readback_timeout: 2.0
-    left.provider_heartbeat_timeout: 3.0
+    left.error_query_timeout: 2.0
+    left.command_readback_timeout: 4.0
+    left.provider_heartbeat_timeout: 5.0
     left.init_read_retry_period: 0.1
     left.init_error_retry_period: 0.1
     left.read_service_timeout: 1.0
@@ -41,9 +41,9 @@ parameters:
     right.target_receive_stale_timeout: 2.0
     right.control_check_period: 0.05
     right.error_poll_period: 0.2
-    right.error_query_timeout: 0.5
-    right.command_readback_timeout: 2.0
-    right.provider_heartbeat_timeout: 3.0
+    right.error_query_timeout: 2.0
+    right.command_readback_timeout: 4.0
+    right.provider_heartbeat_timeout: 5.0
     right.init_read_retry_period: 0.1
     right.init_error_retry_period: 0.1
     right.read_service_timeout: 1.0

@@ -21,7 +21,7 @@ composition，又承担交互式生命周期，最终形成两套启动真相。
    `rokoko_omnihand_bringup` 不得反向导入或依赖 Launchpad。
 3. Launchpad 只拥有控制面配置、实例锁、进程生命周期和会话编排事实；业务节点继续
    拥有自己的 ROS 状态、算法、安全门和 Port。Launchpad 不复制这些业务状态，也不
-   暴露 `arm`、`disarm` 或 `clear_fault`。
+   暴露 `clear_fault`（自 `4fedfaa` 起 arm/disarm 已移除，运动由目标直接驱动）。
 4. T01 先落地 FastAPI/uvicorn 入口、前端脚手架和无业务副作用的占位页；业务进程
    adapter、模式校验和 ROS 图接入由后续 tickets 实现。
 
