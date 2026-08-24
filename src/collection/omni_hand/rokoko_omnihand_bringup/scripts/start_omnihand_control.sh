@@ -167,11 +167,11 @@ start_node "omnihand_o10_hardware_provider" \
     --ros-args \
     -p o10.left.transport:=hcan \
     -p o10.left.hand_device_id:=1 \
-    -p o10.left.canfd_device_id:=0 \
+    -p o10.left.canfd_device_id:=1 \
     -p o10.left.canfd_channel_id:=0 \
     -p o10.right.transport:=hcan \
     -p o10.right.hand_device_id:=1 \
-    -p o10.right.canfd_device_id:=1 \
+    -p o10.right.canfd_device_id:=0 \
     -p o10.right.canfd_channel_id:=0
 sleep 2
 wait_for_processes

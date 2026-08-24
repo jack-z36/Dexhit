@@ -41,7 +41,7 @@ def test_production_adapter_owns_the_formal_vendor_boundary():
     backend = (SOURCE_ROOT / "backends.py").read_text(encoding="utf-8")
     assert "class AgilinkO10Backend" in backend
     assert "get_all_active_joint_angles" in backend
-    assert "get_all_error_reports" in backend
+    assert "get_error_report" in backend
 
 
 def test_read_service_contract_is_the_fixed_no_motion_wire_shape():

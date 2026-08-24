@@ -189,10 +189,21 @@ class AgilinkO10Backend:
         return self._read_positions("read_feedback")
 
     def query_errors(self) -> HardwareResponse[JointError]:
-        """Trigger one SDK error-report query and map report flags to words."""
+        """Trigger one SDK error-report query and map report flags to words.
 
+        Uses the per-joint ``get_error_report(j)`` reader (joint index 1..10)
+        instead of the batch ``get_all_error_reports()``: the vendor batch
+        reader is documented as unstable on a healthy hand (intermittently
+        returns 0 reports, and can magnify a single joint's commu_except into
+        eight). A 0-report batch result makes the Provider publish nothing, the
+        control error query times out, and the control session latches
+        ERROR_MONITOR_TIMEOUT — freezing the hand mid-teleop. The per-joint
+        reader has been verified stable on the real O10 hardware.
+        """
+        reports: list[object] = []
         try:
-            reports = list(self._hand.get_all_error_reports())
+            for joint_index in range(1, 11):
+                reports.append(self._hand.get_error_report(joint_index))
         except Exception as error:
             return HardwareResponse.failure(BackendCode.HARDWARE_ERROR, f"query_errors failed: {error}")
         if len(reports) != 10:

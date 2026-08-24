@@ -128,11 +128,19 @@ class SlewLimiter:
         step = self._max_rates * credit
         command = self._base + np.clip(delta, -step, +step)
 
+        limits = JOINT_LIMITS[self.side]
+        # Clamp to the inclusive joint limits instead of faulting: a soft
+        # target sitting exactly on a limit plus one ulp of floating-point
+        # rounding (``base + (limit - base)`` can land 1 ulp outside) used to
+        # raise SlewResultError and latch SAFETY_INVARIANT every time the
+        # operator drove a joint to its limit. The physical joint stops at its
+        # limit, so the command must stop there too.
+        command = np.clip(command, limits.lower, limits.upper)
+
         if not np.all(np.isfinite(command)):
             raise SlewResultError(
                 f"{self.side.value} slew output is not finite"
             )
-        limits = JOINT_LIMITS[self.side]
         if not limits.contains(command):
             raise SlewResultError(
                 f"{self.side.value} slew output leaves the joint limits"

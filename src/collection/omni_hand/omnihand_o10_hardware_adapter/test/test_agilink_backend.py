@@ -34,9 +34,9 @@ class FakeAgilinkHand:
         self.position_reads += 1
         return list(self.positions.pop(0))
 
-    def get_all_error_reports(self):
+    def get_error_report(self, joint_index):
         self.error_reads += 1
-        return list(self.errors)
+        return self.errors[joint_index - 1]
 
 
 def test_agilink_backend_maps_command_feedback_errors_and_fresh_active_reads():
@@ -65,7 +65,26 @@ def test_agilink_backend_maps_command_feedback_errors_and_fresh_active_reads():
     assert first_read.value.stamp == JointSampleTime(12.0)
     assert second_read.value.stamp == JointSampleTime(13.0)
     assert hand.position_reads == 3
-    assert hand.error_reads == 1
+    assert hand.error_reads == 10
+
+
+def test_agilink_backend_per_joint_error_query_fails_on_sdk_exception():
+    """One failing per-joint read must fail the whole query, not publish
+    partial error words (the error monitor must never see a truncated view)."""
+    hand = FakeAgilinkHand([(0.0,) * 10], [FakeErrorReport() for _ in range(10)])
+    backend = AgilinkO10Backend(Side.LEFT, hand, clock=lambda: 1.0)
+
+    def broken(joint_index):
+        if joint_index == 5:
+            raise RuntimeError("fake per-joint read failure")
+        return FakeErrorReport()
+
+    hand.get_error_report = broken
+    result = backend.query_errors()
+
+    assert result.code is BackendCode.HARDWARE_ERROR
+    assert not result.success
+    assert result.value is None
 
 
 def test_agilink_backend_does_not_turn_malformed_sdk_results_into_success():

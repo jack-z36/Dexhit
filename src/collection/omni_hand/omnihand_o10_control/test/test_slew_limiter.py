@@ -120,3 +120,22 @@ def test_limit_stays_within_the_side_joint_limits(side):
         limiter.initialize(base, 0.0)
         command, _ = limiter.limit(target, 1.0, (1e-6,) * 10)
         assert limits.contains(np.asarray(command))
+
+
+def test_limit_clamps_one_ulp_overshoot_when_a_target_sits_exactly_on_a_limit():
+    """Regression: ``base + (limit - base)`` can round one ulp outside the
+    limit when a soft target sits exactly on it, which used to raise
+    SlewResultError and latch SAFETY_INVARIANT every time the operator drove a
+    joint to its limit. The slew output must clamp onto the limit instead."""
+    side = Side.LEFT
+    limiter = SlewLimiter(side, (1.0,) * 10, 1.0)
+    base = [0.0] * 10
+    base[1] = 0.39890625
+    limiter.initialize(base, 0.0)
+    target = [0.0] * 10
+    target[1] = float(JOINT_LIMITS[side].lower[1])
+
+    command, _ = limiter.limit(target, 1.0, (1e-9,) * 10)
+
+    assert JOINT_LIMITS[side].contains(np.asarray(command))
+    assert command[1] == float(JOINT_LIMITS[side].lower[1])
