@@ -69,10 +69,15 @@ def test_side_mismatch_is_rejected_as_name():
     assert reason is TargetRejectReason.REJECT_NAME
 
 
-def test_wrong_name_order_is_rejected():
-    value = _target(name=tuple(reversed(ACTIVE_JOINT_NAMES)))
-    _, reason, _ = validate_soft_target(value, _config())
-    assert reason is TargetRejectReason.REJECT_NAME
+def test_complete_joint_set_is_reordered_to_the_contract_order():
+    value = _target(
+        name=tuple(reversed(ACTIVE_JOINT_NAMES)),
+        position=tuple(reversed(RIGHT_VALID)),
+    )
+    target, reason, _ = validate_soft_target(value, _config())
+    assert reason is TargetRejectReason.OK
+    assert target is not None
+    assert list(target.values) == list(RIGHT_VALID)
 
 
 def test_wrong_position_dimension_is_rejected():
@@ -82,8 +87,6 @@ def test_wrong_position_dimension_is_rejected():
 
 
 def test_non_finite_position_is_rejected():
-    import math
-
     value = _target(position=(float("nan"),) + RIGHT_VALID[1:])
     _, reason, _ = validate_soft_target(value, _config())
     assert reason is TargetRejectReason.REJECT_NONFINITE
@@ -96,39 +99,43 @@ def test_side_limit_violation_is_rejected():
     assert reason is TargetRejectReason.REJECT_SIDE_LIMIT
 
 
-def test_nonempty_velocity_or_effort_is_rejected():
-    _, reason, _ = validate_soft_target(
-        _target(velocity_empty=False), _config()
+def test_velocity_and_effort_are_ignored_by_the_position_only_gate():
+    target, reason, _ = validate_soft_target(
+        _target(velocity_empty=False, effort_empty=False), _config()
     )
-    assert reason is TargetRejectReason.REJECT_NONEMPTY_VELOCITY_EFFORT
-    _, reason, _ = validate_soft_target(_target(effort_empty=False), _config())
-    assert reason is TargetRejectReason.REJECT_NONEMPTY_VELOCITY_EFFORT
+    assert reason is TargetRejectReason.OK
+    assert target is not None
 
 
-def test_nonempty_frame_id_is_rejected():
-    _, reason, _ = validate_soft_target(_target(frame_id="base"), _config())
-    assert reason is TargetRejectReason.REJECT_HEADER
+def test_frame_id_is_ignored_by_the_joint_position_gate():
+    target, reason, _ = validate_soft_target(_target(frame_id="base"), _config())
+    assert reason is TargetRejectReason.OK
+    assert target is not None
 
 
-def test_missing_input_stamp_is_rejected():
-    _, reason, _ = validate_soft_target(_target(input_stamp=None), _config())
-    assert reason is TargetRejectReason.REJECT_HEADER
+def test_missing_input_stamp_falls_back_to_receive_time():
+    target, reason, _ = validate_soft_target(_target(input_stamp=None), _config())
+    assert reason is TargetRejectReason.OK
+    assert target is not None
+    assert target.stamp.seconds == 0.0
 
 
-def test_future_stamp_is_rejected_as_stale():
-    _, reason, _ = validate_soft_target(
+def test_future_stamp_is_diagnostic_only_for_the_fast_gate():
+    target, reason, _ = validate_soft_target(
         _target(input_stamp=JointSampleTime(1.0), received_at=JointSampleTime(0.5)),
         _config(),
     )
-    assert reason is TargetRejectReason.REJECT_STALE
+    assert reason is TargetRejectReason.OK
+    assert target is not None
 
 
-def test_expired_stamp_is_rejected_as_stale():
-    _, reason, _ = validate_soft_target(
+def test_expired_stamp_is_diagnostic_only_for_the_fast_gate():
+    target, reason, _ = validate_soft_target(
         _target(input_stamp=JointSampleTime(0.0), received_at=JointSampleTime(1.0)),
         _config(target_input_stale_timeout=0.5),
     )
-    assert reason is TargetRejectReason.REJECT_STALE
+    assert reason is TargetRejectReason.OK
+    assert target is not None
 
 
 def test_stamp_within_timeout_is_accepted():

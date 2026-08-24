@@ -11,10 +11,27 @@ from omnihand_o10_control.core.slew_limiter import (
     SlewResultError,
     SlewTimeError,
     SlewUnavailableError,
+    project_slew,
 )
 
 #: A large step only on joint 0 (right thumb_roll has room to 1.12).
 BIG_STEP = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+def test_project_slew_uses_only_the_explicit_running_base():
+    command, flags = project_slew(
+        side=Side.RIGHT,
+        base_position=(0.0,) * 10,
+        base_monotonic=0.0,
+        soft_position=BIG_STEP,
+        monotonic_now=1.0,
+        max_rates=(0.1,) * 10,
+        max_time_credit=0.1,
+        compare_epsilon=(1e-6,) * 10,
+    )
+    assert np.allclose(command, [0.01] + [0.0] * 9)
+    assert flags[0]
+    assert not flags[1:].any()
 
 
 def test_limiter_is_not_initialized_until_a_base_is_adopted():

@@ -12,7 +12,6 @@ from omnihand_o10_contracts import (
     ACTIVE_JOINT_NAMES,
     InvalidJointVectorError,
     JointTarget,
-    Side,
 )
 
 from ..contracts import ControlConfig, SoftTargetValue, TargetResult
@@ -39,14 +38,6 @@ def validate_soft_target(
             f"{config.side.value!r}",
         )
 
-    if value.name != ACTIVE_JOINT_NAMES:
-        return (
-            None,
-            TargetResult.REJECTED_NAME_ORDER,
-            f"soft target name must be the fixed {len(ACTIVE_JOINT_NAMES)} "
-            "active-joint names in contract order",
-        )
-
     if len(value.position) != ACTIVE_JOINT_COUNT:
         return (
             None,
@@ -55,10 +46,24 @@ def validate_soft_target(
             f"got {len(value.position)}",
         )
 
+    if (
+        len(value.name) != ACTIVE_JOINT_COUNT
+        or len(set(value.name)) != ACTIVE_JOINT_COUNT
+        or set(value.name) != set(ACTIVE_JOINT_NAMES)
+    ):
+        return (
+            None,
+            TargetResult.REJECTED_NAME_ORDER,
+            "soft target must contain each active-joint name exactly once",
+        )
+
+    position_by_name = dict(zip(value.name, value.position))
+    canonical_position = tuple(position_by_name[name] for name in ACTIVE_JOINT_NAMES)
+
     try:
         target = JointTarget(
             side=side,
-            values=value.position,
+            values=canonical_position,
             stamp=value.input_stamp if value.input_stamp is not None else value.received_at,
         )
     except InvalidJointVectorError as error:
@@ -78,36 +83,6 @@ def validate_soft_target(
             None,
             TargetResult.REJECTED_SCHEMA,
             f"{side.value} soft target position is invalid: {error}",
-        )
-
-    if not value.velocity_empty or not value.effort_empty:
-        return (
-            None,
-            TargetResult.REJECTED_AUX_FIELDS,
-            f"{side.value} soft target must leave velocity and effort empty",
-        )
-
-    if value.frame_id != "":
-        return (
-            None,
-            TargetResult.REJECTED_TIMESTAMP,
-            f"{side.value} soft target frame_id must be empty, got "
-            f"{value.frame_id!r}",
-        )
-
-    if value.input_stamp is None:
-        return (
-            None,
-            TargetResult.REJECTED_TIMESTAMP,
-            f"{side.value} soft target header.stamp is required (doc 02)",
-        )
-
-    input_age = value.received_at.seconds - value.input_stamp.seconds
-    if input_age < 0.0 or input_age > config.target_input_stale_timeout:
-        return (
-            None,
-            TargetResult.REJECTED_TIMESTAMP,
-            f"{side.value} soft target input timestamp is stale or in the future",
         )
 
     return target, TargetResult.SENT, "accepted"

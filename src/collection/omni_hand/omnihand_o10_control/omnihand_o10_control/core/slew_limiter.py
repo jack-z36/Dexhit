@@ -22,6 +22,7 @@ __all__ = [
     "SlewUnavailableError",
     "SlewTimeError",
     "SlewResultError",
+    "project_slew",
 ]
 
 
@@ -35,6 +36,57 @@ class SlewTimeError(ValueError):
 
 class SlewResultError(ValueError):
     """The clipped output is not finite or leaves the per-side joint limits."""
+
+
+def project_slew(
+    *,
+    side: Side | str,
+    base_position,
+    base_monotonic: float,
+    soft_position,
+    monotonic_now: float,
+    max_rates: tuple[float, ...],
+    max_time_credit: float,
+    compare_epsilon: tuple[float, ...],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Project one soft target from an explicit running-state base."""
+
+    selected_side = Side.from_value(side)
+    limits = JOINT_LIMITS[selected_side]
+    base = np.asarray(base_position, dtype=np.float64)
+    soft = np.asarray(soft_position, dtype=np.float64)
+    rates = np.asarray(max_rates, dtype=np.float64)
+    epsilon = np.asarray(compare_epsilon, dtype=np.float64)
+    expected = (ACTIVE_JOINT_COUNT,)
+    if base.shape != expected or not limits.contains(base):
+        raise SlewUnavailableError(
+            f"{selected_side.value} slew base is not a valid in-limit vector"
+        )
+    if soft.shape != expected or not limits.contains(soft):
+        raise SlewResultError(
+            f"{selected_side.value} soft target is not a valid in-limit vector"
+        )
+    if rates.shape != expected or not np.all(np.isfinite(rates)):
+        raise SlewResultError("max_rates must be a finite 10-dimensional vector")
+    if epsilon.shape != expected or not np.all(np.isfinite(epsilon)):
+        raise SlewResultError(
+            "compare_epsilon must be a finite 10-dimensional vector"
+        )
+
+    dt = float(monotonic_now) - float(base_monotonic)
+    if not np.isfinite(dt) or dt <= 0.0:
+        raise SlewTimeError(
+            f"{selected_side.value} slew time interval is not finite and positive: {dt!r}"
+        )
+    credit = min(dt, float(max_time_credit))
+    step = rates * credit
+    command = base + np.clip(soft - base, -step, +step)
+    command = np.clip(command, limits.lower, limits.upper)
+    if not np.all(np.isfinite(command)) or not limits.contains(command):
+        raise SlewResultError(
+            f"{selected_side.value} slew output is not finite and in limits"
+        )
+    return command, np.abs(command - soft) > epsilon
 
 
 class SlewLimiter:
@@ -116,39 +168,16 @@ class SlewLimiter:
             raise SlewUnavailableError(
                 f"{self.side.value} slew limiter is not feedback-initialised"
             )
-        dt = monotonic_now - self._base_monotonic
-        if not np.isfinite(dt) or dt <= 0.0:
-            raise SlewTimeError(
-                f"{self.side.value} slew time interval is not finite and "
-                f"positive: {dt!r}"
-            )
-        credit = min(dt, self._max_credit)
-        soft = np.asarray(soft_position, dtype=np.float64)
-        delta = soft - self._base
-        step = self._max_rates * credit
-        command = self._base + np.clip(delta, -step, +step)
-
-        limits = JOINT_LIMITS[self.side]
-        # Clamp to the inclusive joint limits instead of faulting: a soft
-        # target sitting exactly on a limit plus one ulp of floating-point
-        # rounding (``base + (limit - base)`` can land 1 ulp outside) used to
-        # raise SlewResultError and latch SAFETY_INVARIANT every time the
-        # operator drove a joint to its limit. The physical joint stops at its
-        # limit, so the command must stop there too.
-        command = np.clip(command, limits.lower, limits.upper)
-
-        if not np.all(np.isfinite(command)):
-            raise SlewResultError(
-                f"{self.side.value} slew output is not finite"
-            )
-        if not limits.contains(command):
-            raise SlewResultError(
-                f"{self.side.value} slew output leaves the joint limits"
-            )
-
-        epsilon = np.asarray(compare_epsilon, dtype=np.float64)
-        flags = np.abs(command - soft) > epsilon
-        return command, flags
+        return project_slew(
+            side=self.side,
+            base_position=self._base,
+            base_monotonic=self._base_monotonic,
+            soft_position=soft_position,
+            monotonic_now=monotonic_now,
+            max_rates=tuple(float(value) for value in self._max_rates),
+            max_time_credit=self._max_credit,
+            compare_epsilon=compare_epsilon,
+        )
 
     def confirm(self, position, monotonic_now: float) -> None:
         """Advance the base to the successfully published command."""

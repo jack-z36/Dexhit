@@ -6,6 +6,7 @@ from omnihand_o10_contracts import (
     JointError,
     JointFeedback,
     JointSampleTime,
+    JointTarget,
     Side,
 )
 
@@ -33,7 +34,6 @@ from omnihand_o10_control.contracts import (
     TargetReceived,
     TargetRejectReason,
     TimeoutCheck,
-    Trigger,
 )
 
 RIGHT_VALID = (0.5, 0.0, 0.4, 0.0, 0.5, 0.5, 0.05, 0.5, 0.05, 0.5)
@@ -132,7 +132,7 @@ def test_initial_phase_is_uninitialized():
     assert not snapshot.motion_enabled
 
 
-def test_first_feedback_read_keeps_initializing():
+def test_first_feedback_read_enters_running_without_waiting_for_error_poll():
     session = ControlSession(make_config())
     effects = session.on_read_result(
         ReadActiveJointsResult(
@@ -142,8 +142,9 @@ def test_first_feedback_read_keeps_initializing():
     assert len(effects) == 1
     assert isinstance(effects[0], PublishControlState)
     snapshot = session.initial_snapshot(JointSampleTime(0.0))
-    assert snapshot.phase is Phase.INITIALIZING
+    assert snapshot.phase is Phase.IDLE_READY
     assert snapshot.feedback_ready
+    assert snapshot.motion_enabled
 
 
 
@@ -172,6 +173,22 @@ def test_fresh_target_produces_a_slew_limited_command():
     assert list(commands[0].command.values)[0] == pytest.approx(0.01)
 
 
+def test_zero_slew_interval_drops_only_the_current_frame():
+    session = ControlSession(make_config())
+    init_session(session)
+    effects = session.on_target(
+        TargetReceived(soft_target(stamp=1.0), JointSampleTime(1.0), 0.0, JointSampleTime(1.0))
+    )
+    states = [effect.state for effect in effects if isinstance(effect, PublishControlState)]
+    assert states and not states[0].fault_latched
+    assert not any(isinstance(effect, SendJointCommand) for effect in effects)
+
+    later = session.on_target(
+        TargetReceived(soft_target(stamp=1.1), JointSampleTime(1.1), 0.1, JointSampleTime(1.1))
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in later)
+
+
 def test_command_sent_confirms_and_advances_the_slew_base():
     session = ControlSession(make_config())
     init_session(session)
@@ -191,7 +208,21 @@ def test_command_sent_confirms_and_advances_the_slew_base():
     assert list(effects[0].command.values)[0] == pytest.approx(0.011)
 
 
-def test_publish_failure_does_not_advance_the_slew_base():
+def test_unexpected_command_sent_callback_does_not_create_a_fault():
+    session = ControlSession(make_config())
+    effects = session.on_command_sent(
+        CommandSent(
+            JointTarget(Side.RIGHT, RIGHT_VALID, JointSampleTime(1.0)),
+            JointSampleTime(1.0),
+            1.0,
+        )
+    )
+    states = [effect.state for effect in effects if isinstance(effect, PublishControlState)]
+    assert states and not states[0].fault_latched
+    assert not states[0].motion_enabled
+
+
+def test_publish_failure_returns_to_syncing_until_feedback_recovers():
     session = ControlSession(make_config())
     init_session(session)
     effects = session.on_target(
@@ -202,15 +233,27 @@ def test_publish_failure_does_not_advance_the_slew_base():
     )
     assert isinstance(failed[0], PublishControlState)
     assert not failed[0].state.command_published
+    assert failed[0].state.phase is Phase.INITIALIZING
     effects = session.on_target(
         TargetReceived(soft_target(), JointSampleTime(2.02), 2.02, JointSampleTime(2.02))
     )
-    # base never advanced past 0.0; credit is capped at max_time_credit = 0.1
-    assert list(effects[0].command.values)[0] == pytest.approx(0.01)
+    assert not any(isinstance(effect, SendJointCommand) for effect in effects)
+    session.on_read_result(
+        ReadActiveJointsResult(True, feedback(), JointSampleTime(2.03), 2.03)
+    )
+    recovered = session.on_target(
+        TargetReceived(
+            soft_target(stamp=2.04),
+            JointSampleTime(2.04),
+            2.04,
+            JointSampleTime(2.04),
+        )
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in recovered)
 
 
-def test_command_readback_timeout_latches_a_fault():
-    session = ControlSession(make_config())
+def test_command_readback_timeout_does_not_block_later_targets():
+    session = ControlSession(make_config(provider_heartbeat_timeout=100.0))
     init_session(session)
     effects = session.on_target(
         TargetReceived(soft_target(), JointSampleTime(2.0), 2.0, JointSampleTime(2.0))
@@ -218,19 +261,34 @@ def test_command_readback_timeout_latches_a_fault():
     session.on_command_sent(CommandSent(effects[0].command, JointSampleTime(2.0), 2.0))
     timeouts = session.check_timeouts(TimeoutCheck(3.0, JointSampleTime(3.0)))
     fault_states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
-    assert fault_states
-    assert fault_states[0].phase is Phase.FAULT
-    assert fault_states[0].fault_latched
-    assert FaultReason.COMMAND_READBACK_TIMEOUT in fault_states[0].fault_reasons
+    assert not any(state.fault_latched for state in fault_states)
+    later = session.on_target(
+        TargetReceived(
+            soft_target(stamp=3.0),
+            JointSampleTime(3.0),
+            3.0,
+            JointSampleTime(3.0),
+        )
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in later)
 
 
-def test_provider_heartbeat_timeout_latches_a_restart_fault():
+def test_provider_heartbeat_timeout_does_not_latch_the_fast_path():
     session = ControlSession(make_config())
     init_session(session)
     deliver_target_confirmed(session)
     timeouts = session.check_timeouts(TimeoutCheck(4.0, JointSampleTime(4.0)))
     fault_states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
-    assert FaultReason.RESTART_DISCONNECT in fault_states[0].fault_reasons
+    assert not any(state.fault_latched for state in fault_states)
+    later = session.on_target(
+        TargetReceived(
+            soft_target(stamp=4.0),
+            JointSampleTime(4.0),
+            4.0,
+            JointSampleTime(4.0),
+        )
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in later)
 
 
 def test_vendor_error_bit_latches_a_fault():
@@ -261,6 +319,20 @@ def test_commu_except_bit_alone_does_not_latch_a_fault():
     assert FaultReason.HARDWARE_ERROR not in states[0].fault_reasons
 
 
+def test_unknown_vendor_error_bits_do_not_latch_a_fault():
+    session = ControlSession(make_config())
+    init_session(session)
+    effects = session.on_error_status(
+        ErrorStatusReceived(
+            error_status(bits=(32.0,) + (0.0,) * 9),
+            JointSampleTime(2.5),
+            2.5,
+        )
+    )
+    states = [effect.state for effect in effects if isinstance(effect, PublishControlState)]
+    assert states and not states[0].fault_latched
+
+
 def test_commu_except_bit_with_fatal_bit_still_latches_a_fault():
     # commu_except (bit4) is masked, but a real fatal bit (bit0 = stalled)
     # on the same or another joint must still latch a HARDWARE_ERROR fault.
@@ -276,41 +348,63 @@ def test_commu_except_bit_with_fatal_bit_still_latches_a_fault():
     assert not states[0].motion_enabled
 
 
-def test_illegal_feedback_latches_a_fault():
+def test_illegal_feedback_does_not_latch_without_a_fatal_hardware_error():
     session = ControlSession(make_config())
     init_session(session)
     effects = session.on_invalid_feedback(
         InvalidFeedbackReceived(Side.RIGHT, "non-finite", JointSampleTime(2.0), 2.0)
     )
     states = [e.state for e in effects if isinstance(e, PublishControlState)]
-    assert FaultReason.ILLEGAL_FEEDBACK in states[0].fault_reasons
+    assert not any(state.fault_latched for state in states)
 
 
-def test_error_monitor_query_timeout_latches_after_ready():
+def test_error_monitor_query_timeout_does_not_latch_the_fast_path():
     session = ControlSession(make_config())
     init_session(session)
     # force an in-flight error query
     session.check_timeouts(TimeoutCheck(1.1, JointSampleTime(1.1)))
     timeouts = session.check_timeouts(TimeoutCheck(1.6, JointSampleTime(1.6)))
     states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
-    assert states and FaultReason.ERROR_MONITOR_TIMEOUT in states[0].fault_reasons
+    assert not any(state.fault_latched for state in states)
+    later = session.on_target(
+        TargetReceived(
+            soft_target(stamp=1.6),
+            JointSampleTime(1.6),
+            1.6,
+            JointSampleTime(1.6),
+        )
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in later)
 
 
-def test_invalid_error_status_latches_after_monitor_was_ready():
+def test_invalid_error_status_does_not_latch_the_fast_path():
     session = ControlSession(make_config())
     init_session(session)
     effects = session.on_invalid_error_status(
         InvalidErrorStatusReceived(Side.RIGHT, "bad words", JointSampleTime(2.0), 2.0)
     )
     states = [e.state for e in effects if isinstance(e, PublishControlState)]
-    assert states and FaultReason.ERROR_MONITOR_TIMEOUT in states[0].fault_reasons
+    assert not any(state.fault_latched for state in states)
+    later = session.on_target(
+        TargetReceived(
+            soft_target(stamp=2.0),
+            JointSampleTime(2.0),
+            2.0,
+            JointSampleTime(2.0),
+        )
+    )
+    assert any(isinstance(effect, SendJointCommand) for effect in later)
 
 
 
 def latch_fault(session: ControlSession) -> None:
-    """Latch a fault and keep the provider heartbeat alive afterwards."""
-    session.on_invalid_feedback(
-        InvalidFeedbackReceived(Side.RIGHT, "non-finite", JointSampleTime(2.0), 2.0)
+    """Latch an explicit fatal hardware error, then keep communication alive."""
+    session.on_error_status(
+        ErrorStatusReceived(
+            error_status(bits=(1.0,) + (0.0,) * 9),
+            JointSampleTime(2.0),
+            2.0,
+        )
     )
     session.on_error_status(
         ErrorStatusReceived(error_status(), JointSampleTime(2.6), 2.6)
@@ -432,22 +526,16 @@ def test_rejected_target_stops_motion_and_records_reason():
     assert any(isinstance(e, SendJointCommand) for e in effects)
 
 
-def test_target_staleness_turns_motion_off_without_a_fault():
-    session = ControlSession(
-        make_config(provider_heartbeat_timeout=100.0)
-    )
+def test_old_target_stamp_does_not_block_the_fast_path():
+    session = ControlSession(make_config())
     init_session(session)
-    deliver_target_confirmed(session, stamp=2.0, now=2.0)
-    # advance time well past both target freshness limits
-    timeouts = session.check_timeouts(TimeoutCheck(5.0, JointSampleTime(5.0)))
-    states = [e.state for e in timeouts if isinstance(e, PublishControlState)]
-    assert len(states) == 1
-    assert not states[0].target_fresh
-    assert not states[0].motion_enabled
-    assert not states[0].fault_latched
-    # a fresh target restores motion without a fault
     effects = session.on_target(
-        TargetReceived(soft_target(stamp=5.0), JointSampleTime(5.1), 5.1, JointSampleTime(5.1))
+        TargetReceived(
+            soft_target(stamp=2.0),
+            JointSampleTime(5.0),
+            5.0,
+            JointSampleTime(5.0),
+        )
     )
     assert any(isinstance(e, SendJointCommand) for e in effects)
 
