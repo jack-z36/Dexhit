@@ -18,7 +18,7 @@
 凡是涉及 Rokoko 手套、手部重定向、OmniHand O10、其 ROS 链路、Launchpad、回放、测试或真机适配的任务，在读取本文件和对应任务入口后，**正式执行任何任务前必须先运行**：
 
 ```bash
-bash src/collection/omni_hand/init.sh
+./init_omnihand.sh
 ```
 
 该脚本只负责确认软件基线（worktree、ROS Jazzy、数值环境、模型 fixture、构建和测试），默认检测并拒绝遗留的相关 ROS 节点；它不会启动节点、发布命令、清故障或驱动实体手。依赖安装需显式使用 `--install`，真实硬件启动仍必须遵循 `DOCS/03_工程/09_Rokoko到OmniHand_O10全流程启动手册.md` 的人工安全检查。
@@ -29,7 +29,7 @@ bash src/collection/omni_hand/init.sh
 ./start_omnihand_control.sh
 ```
 
-不要直接调用 `src/collection/omni_hand/rokoko_omnihand_bringup/scripts/start_omnihand_control.sh`；该路径仅作为兼容转发后的实现路径保留。根入口会自动锚定 worktree，并把参数原样转交给实现脚本。
+不要直接调用 `src/collection/teleoperation_support/production_bringup/scripts/start_omnihand_control.sh`；该路径是 package-local 实现入口。根入口会自动锚定 worktree，并把参数原样转交给实现脚本。
 
 任务跨越多个类型时，读取所有对应入口。默认不读取 [archive](DOCS/98_archive/INDEX.md) 和 [learning](DOCS/99_learning/INDEX.md)，除非用户明确要求历史追溯或学习资料。
 

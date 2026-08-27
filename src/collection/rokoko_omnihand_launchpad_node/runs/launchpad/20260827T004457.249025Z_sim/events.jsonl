@@ -1,0 +1,7 @@
+{"metadata": {"path": "runs/launchpad/20260827T004457.249025Z_sim"}, "timestamp": "2026-08-27T00:44:57.253717+00:00", "type": "run_created"}
+{"blocks": ["rokoko_receiver", "hand_retargeting", "omnihand_o10_control", "sim_provider"], "profile": "default", "side": "left", "timestamp": "2026-08-27T00:44:57.253862+00:00", "type": "configured"}
+{"node": "omnihand_o10_control", "timestamp": "2026-08-27T00:44:57.254023+00:00", "type": "block_stopped"}
+{"node": "hand_retargeting", "timestamp": "2026-08-27T00:44:57.254038+00:00", "type": "block_stopped"}
+{"node": "sim_provider", "timestamp": "2026-08-27T00:44:57.254048+00:00", "type": "block_stopped"}
+{"node": "rokoko_receiver", "timestamp": "2026-08-27T00:44:57.254055+00:00", "type": "block_stopped"}
+{"timestamp": "2026-08-27T00:44:57.254278+00:00", "type": "run_closed"}

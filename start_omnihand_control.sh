@@ -9,7 +9,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 WORKSPACE_ROOT="$SCRIPT_DIR"
-IMPLEMENTATION="$WORKSPACE_ROOT/src/collection/omni_hand/rokoko_omnihand_bringup/scripts/start_omnihand_control.sh"
+IMPLEMENTATION="$WORKSPACE_ROOT/src/collection/teleoperation_support/production_bringup/scripts/start_omnihand_control.sh"
 
 [[ -f "$WORKSPACE_ROOT/AGENTS.md" ]] \
   || { echo "[omnihand-launch] ERROR: not a Dexhit collection root: $WORKSPACE_ROOT" >&2; exit 1; }

@@ -14,3 +14,4 @@
 - [O10 无动作主动关节读取使用逐侧 Service](0010-o10-fresh-active-joint-read-service.md)：生产与纯软件 Provider 通过同一逐侧 Service 在请求后执行无动作新读取，控制端拥有超时与复核。
 - [Launchpad 真机与 system_test 编排边界](0011-launchpad-real-hardware-test-boundary.md)：真机模式禁止编排配置引用 `system_test`；mock 模式允许复用纯软件 Provider 与场景生成器。
 - [Launchpad 作为设备编排层](0012-launchpad-device-orchestration-layer.md)：Launchpad 位于控制面最外层，按模式选择业务包和替身 Provider，业务包不得反向依赖 Launchpad。
+- [Collection 源码按生产节点优先组织](0013-collection-production-node-first-source-layout.md)：顶层只展示五个生产期节点，并将接口、模型、bringup、测试和第三方运行时隔离到显式支撑目录。

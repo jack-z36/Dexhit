@@ -10,7 +10,7 @@ PYTHON_SITE="/home/hit/miniforge3/envs/dexhit_collection/lib/python3.12/site-pac
 CONDA_SH="/home/hit/miniforge3/etc/profile.d/conda.sh"
 ROS_SETUP="/opt/ros/jazzy/setup.bash"
 WORKSPACE_SETUP="$ROOT_DIR/install/setup.bash"
-LAUNCHPAD_SRC="$ROOT_DIR/src/collection/rokoko_omnihand_launchpad"
+LAUNCHPAD_SRC="$ROOT_DIR/src/collection/rokoko_omnihand_launchpad_node"
 URL="http://127.0.0.1:8710"
 
 die() {

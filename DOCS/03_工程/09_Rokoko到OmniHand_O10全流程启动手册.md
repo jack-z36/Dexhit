@@ -177,7 +177,7 @@ source install/setup.bash
 export DEXHIT_COLLECTION_PREFIX=/home/hit/miniforge3/envs/dexhit_collection
 export OMNIHAND_O10_MODEL_FIXTURE=/home/hit/dexhit-external/omnihand_o10_fixture-f4fd0d913c2151bcb4be0d29fbc02761b9638009
 
-bash src/collection/omni_hand/hand_retargeting/scripts/hand_retargeting_node \
+bash src/collection/hand_retargeting_node/scripts/hand_retargeting_node \
   --ros-args \
   --params-file runs/retargeting_diag_params.yaml \
   -p recovery_confirmation_timeout_sec:=0.5

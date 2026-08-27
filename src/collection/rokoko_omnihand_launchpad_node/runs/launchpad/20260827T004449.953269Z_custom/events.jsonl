@@ -1,0 +1,11 @@
+{"metadata": {"path": "runs/launchpad/20260827T004449.953269Z_custom"}, "timestamp": "2026-08-27T00:44:49.966172+00:00", "type": "run_created"}
+{"blocks": ["rokoko_receiver", "hand_retargeting", "omnihand_o10_control", "sim_provider"], "profile": "default", "side": "right", "timestamp": "2026-08-27T00:44:49.966399+00:00", "type": "configured"}
+{"node": "rokoko_receiver", "pid": 1198899, "timestamp": "2026-08-27T00:44:49.972011+00:00", "type": "block_started"}
+{"node": "sim_provider", "pid": 1198901, "timestamp": "2026-08-27T00:44:49.976906+00:00", "type": "block_started"}
+{"node": "hand_retargeting", "pid": 1198903, "timestamp": "2026-08-27T00:44:49.981519+00:00", "type": "block_started"}
+{"node": "omnihand_o10_control", "pid": 1198905, "timestamp": "2026-08-27T00:44:49.986350+00:00", "type": "block_started"}
+{"exit_code": 17, "node": "sim_provider", "timestamp": "2026-08-27T00:44:50.104308+00:00", "type": "process_crashed"}
+{"node": "omnihand_o10_control", "timestamp": "2026-08-27T00:44:50.201920+00:00", "type": "block_stopped"}
+{"node": "hand_retargeting", "timestamp": "2026-08-27T00:44:50.214570+00:00", "type": "block_stopped"}
+{"node": "sim_provider", "timestamp": "2026-08-27T00:44:50.220721+00:00", "type": "block_stopped"}
+{"node": "rokoko_receiver", "timestamp": "2026-08-27T00:44:50.233835+00:00", "type": "block_stopped"}

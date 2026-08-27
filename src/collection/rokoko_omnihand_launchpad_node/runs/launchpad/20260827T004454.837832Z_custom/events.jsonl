@@ -1,0 +1,2 @@
+{"metadata": {"path": "runs/launchpad/20260827T004454.837832Z_custom"}, "timestamp": "2026-08-27T00:44:54.842964+00:00", "type": "run_created"}
+{"blocks": ["rokoko_receiver", "hand_retargeting"], "profile": "diagnostic", "side": "left", "timestamp": "2026-08-27T00:44:54.843096+00:00", "type": "configured"}

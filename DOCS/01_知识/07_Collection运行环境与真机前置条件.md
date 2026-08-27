@@ -67,12 +67,10 @@ Launchpad 网页不提供任何操作/授权 Service（自 `4fedfaa` 起 `arm`/`
 环境验证应从低风险到高风险逐级进行：
 
 ```bash
-/home/hit/miniforge3/envs/dexhit_collection/bin/python -c \
-  'import pinocchio, nlopt, numpy; print("numeric runtime ok")'
-source /opt/ros/jazzy/setup.bash
-ros2 pkg list | rg 'rokoko|omnihand|hand_retargeting'
-lsusb
+./init_omnihand.sh
 ```
+
+该根入口统一检查 ROS Jazzy、项目 Python 3.12 数值环境、模型 fixture、x64/Jazzy Agilink SDK、11 个自有 package 和遗留 ROS 图，并且不会启动节点或接触实体手。第三方前缀固定在 `src/collection/third_party/agillink_omnihand_sdk/linux/x64/ros2/jazzy/`，由 `third_party/COLCON_IGNORE` 与自有源码隔离。
 
 随后才运行 Launchpad 的 preflight、数据链路或 sim 验证。真机验收还需要独立的会话目录、MCAP、`/rosout`、事件时间线和系统监控证据；这些证据不能由软件单元测试替代。
 

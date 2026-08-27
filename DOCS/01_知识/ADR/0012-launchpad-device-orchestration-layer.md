@@ -13,8 +13,8 @@ composition，又承担交互式生命周期，最终形成两套启动真相。
 
 ## 决策
 
-1. `rokoko_omnihand_launchpad` 是 `src/collection` 下与 `omni_hand` 平级的独立
-   `ament_python` 包，属于 Composition / External 层。
+1. `rokoko_omnihand_launchpad` 是独立 `ament_python` 包，属于 Composition /
+   External 层；其当前物理位置遵循 [ADR-0013](0013-collection-production-node-first-source-layout.md)，目录位置不改变本 ADR 的依赖和所有权决策。
 2. 依赖方向为 `launchpad → rokoko_hand_receiver / hand_retargeting /
    omnihand_o10_control / omnihand_o10_hardware_adapter`；`launchpad →
    rokoko_omnihand_system_test` 仅允许在显式 mock 模式成立。业务包、Provider 和

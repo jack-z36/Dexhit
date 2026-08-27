@@ -1,0 +1,4 @@
+{"metadata": {"path": "runs/launchpad/20260827T004452.801692Z_custom"}, "timestamp": "2026-08-27T00:44:52.807518+00:00", "type": "run_created"}
+{"blocks": ["synthetic_input"], "profile": "default", "side": "left", "timestamp": "2026-08-27T00:44:52.807713+00:00", "type": "configured"}
+{"node": "synthetic_input", "pid": 1198977, "timestamp": "2026-08-27T00:44:52.815957+00:00", "type": "block_started"}
+{"node": "synthetic_input", "timestamp": "2026-08-27T00:44:54.832700+00:00", "type": "block_stopped"}

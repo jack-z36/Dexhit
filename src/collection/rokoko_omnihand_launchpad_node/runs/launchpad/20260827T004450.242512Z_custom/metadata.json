@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-08-27T00:44:50.242607+00:00",
+  "blocks": [
+    "rokoko_receiver",
+    "hand_retargeting",
+    "omnihand_o10_control"
+  ],
+  "template": "custom",
+  "label": "",
+  "profile": "default",
+  "git_commit": "4556b8e6d0d5030d9b55f7d582821d1a41764954",
+  "usb_devices": [
+    "Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub",
+    "Bus 001 Device 002: ID 1462:7e06 Micro Star International MYSTIC LIGHT ",
+    "Bus 001 Device 003: ID 05e3:0608 Genesys Logic, Inc. Hub",
+    "Bus 001 Device 004: ID 1a2c:2c27 China Resource Semico Co., Ltd USB Keyboard",
+    "Bus 001 Device 005: ID 05e3:0608 Genesys Logic, Inc. Hub",
+    "Bus 001 Device 006: ID 8087:0033 Intel Corp. AX211 Bluetooth",
+    "Bus 001 Device 007: ID 24ae:2015 Shenzhen Rapoo Technology Co., Ltd. Rapoo 2.4G Wireless Device",
+    "Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub"
+  ],
+  "execution_mode": "real",
+  "mode": "real",
+  "side": "both",
+  "params": {
+    "blocks": [
+      "rokoko_receiver",
+      "hand_retargeting",
+      "omnihand_o10_control"
+    ],
+    "side": "both",
+    "profile": "default",
+    "label": "",
+    "template": "custom",
+    "mode": "real",
+    "udp_port": 14043,
+    "actor": 0,
+    "can_channel": "can0",
+    "execution_mode": "real",
+    "confirmed": false
+  }
+}

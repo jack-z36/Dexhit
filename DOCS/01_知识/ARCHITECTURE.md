@@ -2,7 +2,7 @@
 
 > 状态：本文同时记录**当前事实**与已经接受但尚未完成的**目标设计**；各节分别标注。  
 > Originating spec：[Rokoko 到 OmniHand O10 实时遥操作系统 Spec](../03_工程/01_Rokoko到OmniHand_O10实时遥操作系统Spec.md)，[GitHub Issue #1](https://github.com/jack-z36/Dexhit/issues/1)  
-> Related ADRs：[ADR-0001](ADR/0001-o10-active-joint-constrained-kinematics.md)、[ADR-0002](ADR/0002-phase1-single-finger-ik-slsqp-analytic-gradient.md)、[ADR-0003](ADR/0003-o10-feedback-initialized-event-driven-slew-limit.md)、[ADR-0004](ADR/0004-o10-explicit-per-side-operator-arming.md)、[ADR-0005](ADR/0005-o10-recoverable-pause-vs-latched-fault.md)、[ADR-0006](ADR/0006-stale-recovery-validation-and-bounded-resume.md)、[ADR-0007](ADR/0007-o10-versioned-minimal-runtime-model-assets.md)、[ADR-0008](ADR/0008-o10-control-event-effect-hardware-port.md)、[ADR-0009](ADR/0009-phase1-owned-runtime-python.md)、[ADR-0010](ADR/0010-o10-fresh-active-joint-read-service.md)、[ADR-0011](ADR/0011-launchpad-real-hardware-test-boundary.md)、[ADR-0012](ADR/0012-launchpad-device-orchestration-layer.md)
+> Related ADRs：[ADR-0001](ADR/0001-o10-active-joint-constrained-kinematics.md)、[ADR-0002](ADR/0002-phase1-single-finger-ik-slsqp-analytic-gradient.md)、[ADR-0003](ADR/0003-o10-feedback-initialized-event-driven-slew-limit.md)、[ADR-0004](ADR/0004-o10-explicit-per-side-operator-arming.md)、[ADR-0005](ADR/0005-o10-recoverable-pause-vs-latched-fault.md)、[ADR-0006](ADR/0006-stale-recovery-validation-and-bounded-resume.md)、[ADR-0007](ADR/0007-o10-versioned-minimal-runtime-model-assets.md)、[ADR-0008](ADR/0008-o10-control-event-effect-hardware-port.md)、[ADR-0009](ADR/0009-phase1-owned-runtime-python.md)、[ADR-0010](ADR/0010-o10-fresh-active-joint-read-service.md)、[ADR-0011](ADR/0011-launchpad-real-hardware-test-boundary.md)、[ADR-0012](ADR/0012-launchpad-device-orchestration-layer.md)、[ADR-0013](ADR/0013-collection-production-node-first-source-layout.md)
 
 本文只规定实时手部遥操作系统在 `collection` 阶段的代码结构、依赖方向、包边界、端口、所有权和架构门禁。业务行为以 originating spec 和相应接口契约为准；本文不重新定义算法、参数或产品范围。
 
@@ -10,9 +10,9 @@
 
 ### 当前事实
 
-当前受管业务源码只有 `omnihand_o10_control` ROS 2 Python 包。它订阅左右软目标 Topic，执行 10 维有限值和侧别限位校验后直接发布厂商位置 Topic。其 ROS glue、校验和厂商 bringup 依赖尚未分层；Rokoko 接收节点、手部重定向节点、自定义接口包和完整安全状态机尚未实现。
+当前受管实现包含三个稳定业务节点（Rokoko 接收、手部重定向、O10 控制）、生产硬件 Provider、Launchpad 控制面，以及消息、契约、模型、bringup 和测试支撑包。运行链、逐侧控制状态机、纯软件 Provider 和结构门禁均已形成独立 ROS package 边界；真实硬件行为是否就绪仍必须按真机证据单独判定。
 
-`src/collection/omni_hand/jazzy/` 是当前工作区中的厂商安装前缀和二进制运行产物，不是 Dexhit 拥有的源码包，也不进入本文的受管包依赖图。
+`src/collection/third_party/agillink_omnihand_sdk/linux/x64/ros2/jazzy/` 是固定来源的 Agilink SDK 1.1.8 厂商安装前缀和二进制运行产物，不是 Dexhit 拥有的源码包，不进入本文受管 package 依赖图，也被 `third_party/COLCON_IGNORE` 排除在源码发现之外。
 
 ### 目标设计
 
@@ -77,7 +77,7 @@ JSON v3 UDP 测试源
 
 ### 当前事实
 
-当前 `omnihand_o10_control` 把 ROS Node 和目标校验放在同一包中，`package.xml` 直接声明 `omnihand_node` 运行依赖，launch 同时启动厂商节点和控制节点。现有测试已经通过 ROS 图观察公开 Topic，可保留为行为测试 prior art；当前“合法命令直接转发”不是目标架构允许的生产旁路。
+受管 ROS package 已按下述层级拆分，控制包不再直接依赖厂商 SDK；生产 Provider 和纯软件 Provider 经同一 wire contract 接入。物理目录只表达源码导航角色，依赖和公共 API 继续由 ROS package 名、manifest、executable 与 wire contract 定义。
 
 ### 目标层级
 
@@ -111,29 +111,39 @@ Ports 是 Application/Core 所依赖的抽象能力，Adapter 实现 Port；Port
 
 Phase 1 的 Dexhit 自有运行代码固定为 Python 3/`ament_python`。`rokoko_omnihand_msgs` 与 `omnihand_o10_model` 可使用 ROSIDL/`ament_cmake`，厂商外部节点可保持 C++。因此本架构的包内 AST/import 门禁覆盖全部自有业务运行代码；若未来将任一自有运行包迁移到 C++，必须先修订 ADR-0009，并加入 C/C++ include、CMake target link 和编译依赖门禁，不能在现有门禁盲区内直接迁移。
 
-### 目标包布局
+### 源码布局（当前）
 
-现有 ROS 业务包位于 `src/collection/omni_hand/`，Launchpad 是
-`src/collection/` 下与其平级的独立 `ament_python` 包；两者都由 collection 的
-colcon 入口发现。包名是依赖边界，不创建跨包 `utils`、`common` 或隐式共享目录。
+`src/collection/` 顶层只放五个生产期长驻节点目录、一个非节点支撑容器和一个第三方目录。物理目录使用角色名和 `_node` 后缀帮助导航；ROS package 名仍是依赖边界。`teleoperation_support/` 不创建同名 ROS/Python package、不提供公共 import，也不得演变成跨包 `utils`、`common` 或隐式共享目录。
 
 ```text
 src/collection/
-├── rokoko_omnihand_launchpad/            # 本机控制面与设备编排层（T01 骨架）
-└── omni_hand/
-    ├── rokoko_omnihand_msgs/             # ROSIDL wire schema
-    ├── omnihand_o10_contracts/           # 纯 O10 共享语义和值对象
-    ├── omnihand_o10_model/               # 无节点、版本锁定的核心资产
-    ├── rokoko_hand_receiver/             # Rokoko 接收节点
-    ├── hand_retargeting/                 # 手部重定向节点
-    ├── omnihand_o10_control/             # O10 控制节点（改造现有包）
-    ├── omnihand_o10_hardware_adapter/    # 生产 O10HardwarePort Provider
-    ├── rokoko_omnihand_bringup/          # 仅生产 composition
-    ├── rokoko_omnihand_system_test/      # 无真机 Provider 与端到端行为测试
-    └── rokoko_omnihand_architecture_test/ # 跨包结构门禁
+├── rokoko_hand_receiver_node/
+├── hand_retargeting_node/
+├── omnihand_o10_control_node/
+├── omnihand_o10_hardware_provider_node/
+├── rokoko_omnihand_launchpad_node/
+├── teleoperation_support/
+│   ├── ros_interfaces/
+│   ├── o10_contracts/
+│   ├── o10_model_assets/
+│   ├── production_bringup/
+│   ├── system_tests/
+│   └── architecture_tests/
+└── third_party/
+    └── agillink_omnihand_sdk/linux/x64/ros2/jazzy/
 ```
 
 上述十一个受管包中只有 `rokoko_hand_receiver`、`hand_retargeting`、`omnihand_o10_control` 提供业务节点。`omnihand_o10_hardware_adapter` 可以提供厂商 shim/Provider 进程，但它是外部设备适配层，不拥有业务状态，因此不计为第四个稳定业务功能节点。Launchpad 是控制面进程，不是业务节点；消息、Contracts、资产和测试包不提供生产业务节点；bringup 只做 composition。
+
+| 物理目录角色 | ROS package | executable | ROS 节点名 / 进程角色 |
+| --- | --- | --- | --- |
+| `rokoko_hand_receiver_node/` | `rokoko_hand_receiver` | `rokoko_hand_receiver_node` | `rokoko_hand_receiver`，业务节点 |
+| `hand_retargeting_node/` | `hand_retargeting` | `hand_retargeting_node` | `hand_retargeting`（逐侧实例），业务节点 |
+| `omnihand_o10_control_node/` | `omnihand_o10_control` | `o10_control_node` | `o10_control_node`，业务节点 |
+| `omnihand_o10_hardware_provider_node/` | `omnihand_o10_hardware_adapter` | `omnihand_o10_hardware_provider` | `omnihand_o10_hardware_provider`，设备 Adapter |
+| `rokoko_omnihand_launchpad_node/` | `rokoko_omnihand_launchpad` | `rokoko_omnihand_launchpad` | `rokoko_omnihand_launchpad`，Composition/External 控制面 |
+
+Support 六个物理目录与 package 的映射依次为：`ros_interfaces → rokoko_omnihand_msgs`、`o10_contracts → omnihand_o10_contracts`、`o10_model_assets → omnihand_o10_model`、`production_bringup → rokoko_omnihand_bringup`、`system_tests → rokoko_omnihand_system_test`、`architecture_tests → rokoko_omnihand_architecture_test`。其中只有 `system_tests` 可提供 `software_o10_provider` 测试 executable；它不得进入生产 composition。
 
 | 包 | Responsibility / Owns | Allowed dependencies | Must not |
 | --- | --- | --- | --- |
@@ -384,12 +394,15 @@ ROS runtime converts wire messages at entry and converts pure decisions/effects 
 | A16 | ROS `.msg/.srv` numeric enums 和字段 MUST 只在接口包定义，消费者不得复制 numeric literals | generated interface contract test + Python source scan | `test_wire_contract_single_source` | ENFORCED |
 | A17 | 业务包 MUST NOT 创建 `utils`/`common` 跨包依赖汇 | 路径和 Python import lint | `test_no_dependency_dumping_ground` | ENFORCED |
 | A18 | 安全/性能未标定参数 MUST 是显式必需配置，MUST NOT 伪装成真机安全默认值 | 参数 schema test：缺失时启动失败；来源元数据检查 | `test_required_experimental_parameters` | ENFORCED；参数是否安全仍需 manual review |
-| A19 | `src/collection/omni_hand/jazzy/` MUST 作为外部安装产物，不得成为源码 import、绝对路径或受管包 owner | manifest/import/path lint；构建在干净外部 prefix 复现 | `test_vendor_prefix_is_external` | ENFORCED |
+| A19 | `src/collection/third_party/agillink_omnihand_sdk/linux/x64/ros2/jazzy/` MUST 作为 colcon 忽略的外部安装产物，不得成为源码 import、相对路径依赖或受管包 owner | COLCON_IGNORE、manifest/import/path lint；与固定上游 x64 prefix 逐文件复核 | `test_A19_vendor_prefix_is_external_install_artifact` | ENFORCED |
 | A20 | 生产 composition MUST 只包含三个 Dexhit 业务节点、允许的生产 Provider/shim 和外部厂商节点；任何测试包或纯软件 Provider MUST NOT 出现 | launch structure test + executable/package allowlist inventory | `test_production_business_node_inventory` | ENFORCED；厂商 Provider/shim 进程不计为业务节点 |
 | A21 | 硬件 Adapter、bringup、消息、资产和测试包 MUST NOT 拥有运动使能（`4fedfaa` 起无 `armed`）、故障、IK、stale 或限速业务状态 | reviewer checklist：逐包检查 state fields、callbacks 和 lifecycle ownership | reviewer checklist | manual review only |
 | A22 | Phase 1 Dexhit 自有运行包 MUST 使用 Python 3/`ament_python`；若引入 C++，必须先加入 include/CMake/link 门禁并更新 ADR | manifest build_type/executable inventory test | `test_owned_runtime_language_policy` | ENFORCED |
-| A23 | Launchpad MUST be a sibling package under `src/collection`, MUST bind its T01 control plane to `127.0.0.1:8710`, and MUST NOT start business nodes | package/source boundary test plus T01 black-box HTTP test | `test_launchpad_skeleton_boundary` | ENFORCED |
+| A23 | Launchpad MUST 位于 `src/collection/rokoko_omnihand_launchpad_node/`，MUST bind its control plane to `127.0.0.1:8710`, and MUST NOT automatically start business nodes | package/source boundary test plus control-plane HTTP test | `test_A23_launchpad_skeleton_boundary` | ENFORCED |
 | A24 | Launchpad MUST NOT make production composition depend on `rokoko_omnihand_system_test`; only a mock-mode adapter may reference that package | manifest/import/source scan; mode-specific composition test in later ticket | `test_production_excludes_test_provider` plus launchpad boundary gate | ENFORCED for T01 skeleton; mock-mode behavior pending |
+| A25 | `src/collection/` 顶层目录 MUST 精确等于五个生产节点目录、`teleoperation_support` 和 `third_party`，旧 `omni_hand/` MUST NOT 存在 | 顶层 allowlist、support allowlist、package manifest owner 检查 | `test_A25_collection_top_level_is_production_node_first` | ENFORCED |
+| A26 | 五个顶层节点目录 MUST 各自提供指定生产 executable；support MUST NOT 提供这些生产 executable，唯一允许的测试节点是 `software_o10_provider` | setup/executable inventory test | `test_A26_node_directory_and_support_executable_roles` | ENFORCED |
+| A27 | 根标准入口 MUST 保留命令接口并显式定位新源码路径；除 init 对旧 generated build cache 的精确检测外，旧 `src/collection/omni_hand` 路径 MUST NOT 出现在这些入口 | root script existence、executable bit、usage/path marker scan | `test_A27_root_operator_scripts_keep_canonical_interfaces` | ENFORCED |
 
 任何 GAP 未关闭前，相应 invariant 只能算目标设计。架构测试必须作为 `colcon test` 和 CI 的阻断步骤；不能仅在文档中声明“遵守”。
 

@@ -1,0 +1,7 @@
+{"metadata": {"path": "runs/launchpad/20260827T004450.242512Z_custom"}, "timestamp": "2026-08-27T00:44:50.248324+00:00", "type": "run_created"}
+{"blocks": ["rokoko_receiver", "hand_retargeting", "omnihand_o10_control"], "profile": "default", "side": "both", "timestamp": "2026-08-27T00:44:50.248535+00:00", "type": "configured"}
+{"node": "rokoko_receiver", "pid": 1198911, "timestamp": "2026-08-27T00:44:50.255636+00:00", "type": "block_started"}
+{"node": "rokoko_receiver", "timestamp": "2026-08-27T00:44:50.269618+00:00", "type": "block_stopped"}
+{"node": "omnihand_o10_control", "timestamp": "2026-08-27T00:44:50.269784+00:00", "type": "block_stopped"}
+{"node": "hand_retargeting", "timestamp": "2026-08-27T00:44:50.269803+00:00", "type": "block_stopped"}
+{"timestamp": "2026-08-27T00:44:50.269967+00:00", "type": "run_closed"}

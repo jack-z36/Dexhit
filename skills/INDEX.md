@@ -11,6 +11,7 @@
 | `architecture-review` | 审查 ARCHITECTURE.md 的完整性、内部一致性和可机械执行性（结构审查，非行为） | 用户要审查架构是否完整/可执行，或 architecture-design 之后 | [SKILL.md](architecture-review/SKILL.md) |
 | `diagnosing-bugs` | 对困难 bug 和性能回归建立诊断循环 | 用户要求 diagnose/debug 或报告失败、变慢 | [SKILL.md](diagnosing-bugs/SKILL.md) |
 | `dispatch-tickets` | 用 sub-agent 并行派发执行一组实现 ticket（依赖波次 + 冲突隔离 + 三轮迭代） | 用户有一组 ticket/实施计划要在一个会话内高效并行执行 | [SKILL.md](dispatch-tickets/SKILL.md) |
+| `delegate-to-luna` | 主模型为 `gpt-5.6-sol`/`zai/glm-5.3` 且运行于 Codex 时，把所有长程、高上下文的调查与执行（检索文件、跑命令、批量读、跑测试、改代码）委派给 `gpt-5.6-luna` subagent，主模型只消费压缩后的观察总结做决策 | 任务将占用大量主模型上下文（搜索/执行/批量读取等），或用户要求委派、节省上下文；触发后主模型不亲自执行脏活 | [SKILL.md](delegate-to-luna/SKILL.md) |
 | `domain-modeling` | 建立和收紧项目领域模型 | 用户要明确术语、上下文或架构决策 | [SKILL.md](domain-modeling/SKILL.md) |
 | `grill-me` | 进入持续追问的方案澄清会话 | 用户明确要求 grill | [SKILL.md](grill-me/SKILL.md) |
 | `grill-with-docs` | 追问方案并同步形成 ADR/术语领域文档 | 用户要求 grill 且要产出 ADR/术语文档 | [SKILL.md](grill-with-docs/SKILL.md) |
