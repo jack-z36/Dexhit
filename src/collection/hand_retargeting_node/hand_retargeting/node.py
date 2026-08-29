@@ -77,15 +77,59 @@ def _required(description: str) -> ParameterDescriptor:
     return ParameterDescriptor(description=description, dynamic_typing=True)
 
 
+_SIDES_PARAM = "sides"
+
+
+def _select_sides(value: object) -> tuple[Side, ...]:
+    """Resolve the ``sides`` parameter into the ordered sides to wire up."""
+    if value == "both":
+        return (Side.LEFT, Side.RIGHT)
+    if value == "left":
+        return (Side.LEFT,)
+    if value == "right":
+        return (Side.RIGHT,)
+    raise ValueError(
+        f"unsupported 'sides' parameter value: {value!r} "
+        "(expected both|left|right)"
+    )
+
+
+def _command_qos(command_best_effort: bool) -> QoSProfile:
+    """
+    Historical Reliable depth-10 wire or the E2 best-effort probe link.
+
+    The probe profile is SensorData-like: BestEffort, volatile, KeepLast(1).
+    """
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1 if command_best_effort else 10,
+        reliability=(
+            ReliabilityPolicy.BEST_EFFORT
+            if command_best_effort
+            else ReliabilityPolicy.RELIABLE
+        ),
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
+
 class HandRetargetingNode(Node):
     """Normalize each RawHandFrame side and publish event-driven diagnostics."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__("hand_retargeting", **kwargs)
+        self.declare_parameter(_SIDES_PARAM, "both")
+        selected_sides = _select_sides(self.get_parameter(_SIDES_PARAM).value)
+        command_flags: dict[Side, bool] = {}
+        for side in selected_sides:
+            command_flags[side] = bool(
+                self.declare_parameter(
+                    f"{side.value}.command_best_effort", False
+                ).value
+            )
         config = self._load_required_config()
         self._sessions: dict[Side, RetargetingSession] = {}
         self._model_errors: dict[Side, str] = {}
-        for side in Side:
+        for side in selected_sides:
             try:
                 geometry = load_robot_geometry(side.value)
                 try:
@@ -126,11 +170,15 @@ class HandRetargetingNode(Node):
             side: self.create_publisher(
                 RetargetingState, f"/hand_retargeting/{side.value}/state", state_qos
             )
-            for side in Side
+            for side in selected_sides
         }
         self._command_publishers = {
-            side: self.create_publisher(JointState, f"/o10_control/{side.value}/command", 10)
-            for side in Side
+            side: self.create_publisher(
+                JointState,
+                f"/o10_control/{side.value}/command",
+                _command_qos(command_flags[side]),
+            )
+            for side in selected_sides
         }
         self._subscriptions = [
             self.create_subscription(
@@ -139,10 +187,10 @@ class HandRetargetingNode(Node):
                 lambda message, selected=side: self._on_raw(selected, message),
                 raw_qos,
             )
-            for side in Side
+            for side in selected_sides
         ]
         self._stale_timer = self.create_timer(0.05, self._check_stale)
-        for side in Side:
+        for side in selected_sides:
             if side in self._model_errors:
                 self._publish_state(side, self._decision_with_phase(
                     self._initial_decision(side), "model-error"

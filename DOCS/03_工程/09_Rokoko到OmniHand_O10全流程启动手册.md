@@ -63,7 +63,7 @@ cd "$(git rev-parse --show-toplevel)"
 bash ./start_omnihand_control.sh
 ```
 
-脚本会依次启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点；日志写入 `/tmp/omnihand-control-<timestamp>/`。保持终端 1 运行，按 `Ctrl+C` 会停止本次脚本启动的子节点。脚本不调用任何操作 Service（`arm`/`disarm` 已移除，也不调用 `clear_fault`）。
+脚本会依次启动接收节点、重定向节点、HCAN Provider 和 O10 控制节点；日志写入 `/tmp/omnihand-control-<timestamp>/`。保持终端 1 运行，按 `Ctrl+C` 会停止本次脚本启动的子节点。脚本不调用任何操作 Service（`arm`/`disarm` 已移除，也不调用 `clear_fault`）。无需手工指定 HCAN 设备号：未显式指定的侧会在启动时自动探测并绑定，详见下文《设备自动探测与绑定》一节。
 
 ## 仅测试左手：推荐操作顺序
 
@@ -138,6 +138,51 @@ ros2 service call /o10_control/left/clear_fault rokoko_omnihand_msgs/srv/Control
 
 注意：当前实现还没有真正的 Provider `left_only` 模式。上面的流程是“完整启动图、只关注左手”，不是“只创建左手 Provider”。
 
+## 设备自动探测与绑定
+
+一键启动脚本不再要求手工固定 HCAN 适配器编号。在启动任何节点之前，launcher 会对未被显式指定的请求侧自动运行 `ros2 run omnihand_o10_hardware_adapter omnihand_o10_probe resolve`，按探测结果接线；探测失败则透出报错并整体退出，不会带病启动。
+
+### 机制
+
+身份锚是手的出厂序列号（`VendorInfo.product_seq_num`，经 CAN 可读、不随插拔变化）；`canfd_device_id` 只是 SDK 每次扫描时的临时枚举。绑定文件 `o10_hand_binding.json`（位于 worktree 根）只记录 side → serial，从不记录索引；每次启动都会重新扫描全部适配器索引（默认 0–3），现场把每侧已绑定的序列号换成当次发现的设备号，所以适配器插在任意 USB 口都能直接跑。“右手默认 0、左手默认 1”只保留为接线惯例与兜底默认值。launcher 日志会打印 `autodetect: resolving canfd device id(s) for: <sides>` 与 `autodetect: <side> -> canfd_device_id=<索引>`；probe 自身的 stderr 会打印 `解析: <side> -> canfd_device_id=<索引>`。
+
+### 首次引导：只有一只手在线
+
+现在只有一只手在线时，直接运行（以右手为例）：
+
+```bash
+./start_omnihand_control.sh --sides right
+```
+
+launcher 自动 resolve：扫描各索引后，把在线手的序列号登记为请求侧并写入绑定文件，stderr 打印 `已自动绑定: right=<serial> -> <绑定文件路径>`。此后这只手就固定为“右手”，换 USB 口也不会变。
+
+### 双手
+
+两侧序列号都已登记进绑定文件后，任意插拔直接启动即可：每侧按自己的序列号在当次扫描里找到设备号。如果其中一侧是新序列号（尚未登记），且恰有一条未知序列号的在线总线、恰剩这一个空位，就按排除法自动登记为剩余侧（同样打印 `已自动绑定: ...`）。
+
+### 四种失败与处置
+
+probe 的报错都打在 stderr（行首带 `ERROR: `），以退出码 1 失败，launcher 会停止启动。以下 `<side>`/`<serial>`/`<索引>` 为实际值占位：
+
+1. **0 只手在线**：stderr `未发现任何在线的手：检查电源与 CAN 线`。处置：检查手的电源与 CAN 线。
+2. **已绑定的手本次未扫到**：stderr ``已绑定的 <side> 手（product_seq_num=<serial>）本次扫描未发现：该侧手掉电或拔线``。处置：该侧掉电或拔线，接好后重试。
+3. **无法唯一排除**（在线手里未知序列号不止一条，排除法失效）：stderr ``无法唯一排除未绑定的手：只保留一只手在线并运行 `omnihand_o10_probe bind --side <side>` 后重试``。处置：只保留一只手在线，运行 `ros2 run omnihand_o10_hardware_adapter omnihand_o10_probe bind --side <side>` 手动登记该侧。
+4. **`--sides both` 缺一侧**：stderr `缺少 <side> 手：请求侧没有在线的手`。处置：把缺失侧上电接入后再跑，或先只启动在线侧。
+
+### 调试后门与 scan
+
+显式 `export OMNIHAND_O10_LEFT_CANFD_DEVICE_ID=<索引>` 或 `export OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID=<索引>` 会跳过该侧的自动探测、直接使用该值；两侧都显式设置时完全不运行探测。仅用于调试，日常不需要。
+
+排查时可先用 `scan` 查看每条总线的在线状态与序列号：
+
+```bash
+ros2 run omnihand_o10_hardware_adapter omnihand_o10_probe scan
+```
+
+stdout 是 JSON 数组（形如 `[{"canfd_device_id": 0, "hand_online": false, "product_seq_num": null, "dof": 0}, ...]`），逐索引的在线/离线过程信息走 stderr。
+
+另外：probe 在缺 `DEXHIT_COLLECTION_PREFIX` 环境时打印 `BLOCKED_ENV: ...` 并以退出码 2 退出；launcher 调用前会先导出该变量，不受影响。
+
 ## 方式 B：手动分终端启动
 
 手动方式使用 6 个终端。每个持续运行的节点终端都不要关闭。
@@ -190,6 +235,8 @@ bash src/collection/hand_retargeting_node/scripts/hand_retargeting_node \
 ```bash
 lsusb -d a8fa:8598
 ```
+
+填写 `canfd_device_id` 参数前，也可以先运行 `ros2 run omnihand_o10_hardware_adapter omnihand_o10_probe scan`（需先 `export DEXHIT_COLLECTION_PREFIX`，见下方启动命令）查询每条总线的在线状态与序列号，再据此填写 `canfd_device_id` 参数。
 
 然后启动：
 

@@ -42,9 +42,14 @@ htmlcov/
 /artifacts/
 /runs/
 /logs/
+# Per-package runtime artifact directories (e.g. launchpad test recordings)
+src/**/runs/
 *.log
 **/.cache/
 **/checkpoints/
+
+# O10 device side-to-serial binding (runtime artifact at the worktree root)
+o10_hand_binding.json
 
 # Local secrets
 .env

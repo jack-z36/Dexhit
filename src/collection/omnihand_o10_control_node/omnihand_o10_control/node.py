@@ -23,6 +23,7 @@ import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from rokoko_omnihand_msgs.msg import O10ControlState
 from rokoko_omnihand_msgs.srv import ControlOperation, ReadO10ActiveJoints
@@ -62,6 +63,44 @@ from .contracts import (
 
 __all__ = ["O10ControlNode", "main"]
 
+_SIDES_PARAM = "sides"
+
+
+def _select_sides(value: object) -> tuple[Side, ...]:
+    """
+    Resolve the ``sides`` parameter into the ordered sides to wire up.
+    """
+    if value == "both":
+        return (Side.LEFT, Side.RIGHT)
+    if value == "left":
+        return (Side.LEFT,)
+    if value == "right":
+        return (Side.RIGHT,)
+    raise ValueError(
+        f"unsupported 'sides' parameter value: {value!r} "
+        "(expected both|left|right)"
+    )
+
+
+def _command_qos(command_link_best_effort: bool) -> QoSProfile:
+    """
+    Historical Reliable depth-10 wire or the E2 best-effort probe link.
+
+    Both endpoints of one command hop must switch together (Reliable pub +
+    BestEffort sub is compatible, the reverse is not), which is why each
+    node owns both directions of its hops.
+    """
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1 if command_link_best_effort else 10,
+        reliability=(
+            ReliabilityPolicy.BEST_EFFORT
+            if command_link_best_effort
+            else ReliabilityPolicy.RELIABLE
+        ),
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
 
 def _config_from_params(node: Node, side: Side) -> dict:
     prefix = f"{side.value}"
@@ -94,13 +133,15 @@ class _SideRuntime:
         side: Side,
         config,
         io_group,
+        command_link_best_effort: bool = False,
     ):
         self.side = side
         self.config = config
         self.session = ControlSession(config)
+        command_qos = _command_qos(command_link_best_effort)
 
         self.command_pub = node.create_publisher(
-            JointState, f"/o10/{side.value}/joint_cmd", 10
+            JointState, f"/o10/{side.value}/joint_cmd", command_qos
         )
         self.state_pub = node.create_publisher(
             O10ControlState, f"/o10_control/{side.value}/state", 10
@@ -112,7 +153,7 @@ class _SideRuntime:
             JointState,
             f"/o10_control/{side.value}/command",
             lambda message: node._on_command(side, message),
-            10,
+            command_qos,
             callback_group=io_group,
         )
         self.feedback_sub = node.create_subscription(
@@ -146,25 +187,30 @@ class _SideRuntime:
 class O10ControlNode(Node):
     """Run the two per-side O10 control sessions against the wire graph."""
 
-    def __init__(self, left_config=None, right_config=None):
-        super().__init__("o10_control_node")
+    def __init__(self, left_config=None, right_config=None, parameter_overrides=None):
+        super().__init__(
+            "o10_control_node", parameter_overrides=parameter_overrides
+        )
         # I/O (subscriptions, timer, read client) and operator services live in
         # SEPARATE mutually-exclusive groups: the blocking clear_fault handler
         # must not stall the feedback / error-status subscriptions it waits on.
         self._io_group = MutuallyExclusiveCallbackGroup()
         self._service_group = MutuallyExclusiveCallbackGroup()
-        self._left = self._build_side(Side.LEFT, left_config)
-        self._right = self._build_side(Side.RIGHT, right_config)
-        self._sides = {Side.LEFT: self._left, Side.RIGHT: self._right}
+        self.declare_parameter(_SIDES_PARAM, "both")
+        selected_sides = _select_sides(self.get_parameter(_SIDES_PARAM).value)
+        self._sides: dict[Side, _SideRuntime] = {}
+        for side in selected_sides:
+            override = left_config if side is Side.LEFT else right_config
+            self._sides[side] = self._build_side(side, override)
 
-        self._build_services(self._left, "clear_fault")
-        self._build_services(self._right, "clear_fault")
+        for side in selected_sides:
+            self._build_services(self._sides[side], "clear_fault")
 
-        for side in (Side.LEFT, Side.RIGHT):
+        for side in selected_sides:
             self._publish_state(side, self._sides[side].session.initial_snapshot(self._ros_now()))
 
         self._timer = self.create_timer(
-            self._sides[Side.LEFT].config.control_check_period,
+            next(iter(self._sides.values())).config.control_check_period,
             self._on_timer,
             callback_group=self._io_group,
         )
@@ -174,13 +220,20 @@ class O10ControlNode(Node):
     # ------------------------------------------------------------------
 
     def _build_side(self, side: Side, override) -> _SideRuntime:
+        flag_name = f"{side.value}.command_link_best_effort"
+        self.declare_parameter(flag_name, False)
+        command_link_best_effort = bool(
+            self.get_parameter(flag_name).value
+        )
         if override is not None:
             config = override
         else:
             from omnihand_o10_control.contracts import ControlConfig
 
             config = ControlConfig(**_config_from_params(self, side))
-        return _SideRuntime(self, side, config, self._io_group)
+        return _SideRuntime(
+            self, side, config, self._io_group, command_link_best_effort
+        )
 
     def _build_services(self, runtime: _SideRuntime, operation: str) -> None:
         node = self
@@ -286,7 +339,7 @@ class O10ControlNode(Node):
     # ------------------------------------------------------------------
 
     def _on_timer(self) -> None:
-        for side in (Side.LEFT, Side.RIGHT):
+        for side in self._sides:
             runtime = self._sides[side]
             effects = runtime.session.check_timeouts(
                 TimeoutCheck(self._mono_now(), self._ros_now())

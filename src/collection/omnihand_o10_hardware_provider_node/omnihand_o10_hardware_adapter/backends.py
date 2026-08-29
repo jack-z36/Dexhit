@@ -11,6 +11,30 @@ from .contracts import BackendCode, HardwareResponse
 
 __all__ = ["AgilinkO10Backend", "BlockedExternalBackend"]
 
+_REQUEST_INTERVAL_RANGE = range(0, 101)
+
+
+def _validated_request_interval(request_interval_ms: object) -> int | None:
+    """Validate an explicit SDK-wide request interval (E5 diagnostic knob).
+
+    ``None`` keeps the SDK untouched; otherwise the vendor documents integer
+    milliseconds in 0..100 where 0 disables throttling entirely.
+    """
+
+    if request_interval_ms is None:
+        return None
+    if isinstance(request_interval_ms, bool) or not isinstance(request_interval_ms, int):
+        raise ValueError(
+            f"request_interval_ms must be None or an integer in "
+            f"0..{_REQUEST_INTERVAL_RANGE.stop - 1}, got {request_interval_ms!r}"
+        )
+    if request_interval_ms not in _REQUEST_INTERVAL_RANGE:
+        raise ValueError(
+            f"request_interval_ms must be None or an integer in "
+            f"0..{_REQUEST_INTERVAL_RANGE.stop - 1}, got {request_interval_ms!r}"
+        )
+    return request_interval_ms
+
 
 class BlockedExternalBackend:
     """A safe construction default that cannot claim device access."""
@@ -55,10 +79,25 @@ class AgilinkO10Backend:
         ("commu_except", 1 << 4),
     )
 
-    def __init__(self, side: Side | str, hand: object, clock: Callable[[], float] = time.time):
+    def __init__(
+        self,
+        side: Side | str,
+        hand: object,
+        clock: Callable[[], float] = time.time,
+        request_interval_ms: int | None = None,
+    ) -> None:
         self.side = Side.from_value(side)
         self._hand = hand
         self._clock = clock
+        interval = _validated_request_interval(request_interval_ms)
+        if interval is not None:
+            try:
+                self._hand.set_request_interval(interval)
+            except Exception as error:
+                raise RuntimeError(
+                    "Agilink O10 SDK failed to apply the global request "
+                    f"interval {interval}: {error}"
+                ) from error
 
     @classmethod
     def from_sdk(
@@ -73,8 +112,13 @@ class AgilinkO10Backend:
         uart_port: str | None = None,
         host: str | None = None,
         port: int | None = None,
+        request_interval_ms: int | None = None,
     ) -> "AgilinkO10Backend":
         """Construct and initialize one SDK hand from explicit connection data.
+
+        ``request_interval_ms`` (E5 diagnostic knob) is forwarded to the
+        backend constructor and applied to the initialized SDK hand; the
+        default keeps the vendor configuration untouched.
 
         This method is intentionally lazy: importing the production Provider
         does not require the external wheel.  It must only be called by the
@@ -111,7 +155,7 @@ class AgilinkO10Backend:
             raise RuntimeError("Agilink O10 SDK initialization raised an exception") from error
         if not initialized:
             raise RuntimeError("Agilink O10 SDK failed to initialize the O10 hand")
-        return cls(resolved_side, hand)
+        return cls(resolved_side, hand, request_interval_ms=request_interval_ms)
 
     @staticmethod
     def connection_kwargs(

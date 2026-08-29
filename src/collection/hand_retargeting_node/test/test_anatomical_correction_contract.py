@@ -21,11 +21,15 @@ def test_left_anatomical_correction_reflects_only_lateral_axis():
     )
 
 
-def test_right_anatomical_correction_is_unchanged():
-    """Right-side vectors retain the shared mapping contract exactly."""
+def test_right_anatomical_correction_matches_the_left_reflection():
+    """Right-side vectors share the glove lateral convention with the left."""
     vector = (0.25, -0.5, 0.75)
-    assert correct_anatomical_human_vector(Side.RIGHT, 0, vector) == vector
-    assert correct_anatomical_human_vector(Side.RIGHT, 4, vector) == vector
+    assert correct_anatomical_human_vector(Side.RIGHT, 0, vector) == (
+        -0.25, -0.5, 0.75
+    )
+    assert correct_anatomical_human_vector(Side.RIGHT, 4, vector) == (
+        -0.25, -0.5, 0.75
+    )
 
 
 def test_middle_has_no_fake_abad_and_only_one_active_degree_of_freedom():

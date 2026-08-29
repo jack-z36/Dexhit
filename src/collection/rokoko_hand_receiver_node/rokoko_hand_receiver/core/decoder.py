@@ -64,7 +64,8 @@ class RawHandFrameValue:
 
 @dataclass(frozen=True)
 class DecodeResult:
-    """Decoded frames plus explicit scene/per-side rejection diagnostics.
+    """
+    Decoded frames plus explicit scene/per-side rejection diagnostics.
 
     ``actor_fallback`` is set to the actor index that was actually used when the
     configured ``actor_index`` was out of range but at least one actor was

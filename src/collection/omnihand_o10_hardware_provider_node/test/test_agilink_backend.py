@@ -198,3 +198,99 @@ def test_from_sdk_fails_explicitly_when_factory_cannot_construct(monkeypatch):
             hand_device_id=1,
             uart_port="/dev/ttyFAKE",
         )
+
+
+# --- diagnostic experiment E5: optional global SDK request interval --------
+
+
+def _interval_probe_hand():
+    """A fake hand that records ``set_request_interval`` calls."""
+    hand = FakeAgilinkHand([(0.0,) * 10], [FakeErrorReport() for _ in range(10)])
+    hand.init = lambda: True
+    calls = []
+    hand.set_request_interval = lambda milliseconds: calls.append(milliseconds)
+    return hand, calls
+
+
+def test_constructor_does_not_touch_request_interval_by_default():
+    hand, calls = _interval_probe_hand()
+
+    AgilinkO10Backend(Side.LEFT, hand)
+
+    assert calls == []
+
+
+def test_constructor_applies_explicit_request_interval_after_construction():
+    hand, calls = _interval_probe_hand()
+
+    AgilinkO10Backend(Side.LEFT, hand, request_interval_ms=30)
+
+    assert calls == [30]
+
+
+@pytest.mark.parametrize(
+    "invalid", [True, 3.5, -1, 101], ids=["bool", "float", "negative", "above-range"]
+)
+def test_constructor_rejects_invalid_request_interval_values(invalid):
+    hand, calls = _interval_probe_hand()
+
+    with pytest.raises(ValueError, match="request_interval_ms"):
+        AgilinkO10Backend(Side.LEFT, hand, request_interval_ms=invalid)
+
+    assert calls == []
+
+
+def test_constructor_wraps_sdk_request_interval_failures():
+    hand = FakeAgilinkHand([(0.0,) * 10], [FakeErrorReport() for _ in range(10)])
+
+    def broken(milliseconds):
+        raise RuntimeError("fake SDK failure")
+
+    hand.set_request_interval = broken
+    with pytest.raises(RuntimeError, match="failed to apply.*request interval"):
+        AgilinkO10Backend(Side.LEFT, hand, request_interval_ms=30)
+
+
+def _fake_sdk_module(hand):
+    sdk_class = type(
+        "OmniHand2025",
+        (),
+        {"create_hand_by_rs485": staticmethod(lambda **kwargs: hand)},
+    )
+    return SimpleNamespace(
+        HandType=SimpleNamespace(LEFT="LEFT", RIGHT="RIGHT"),
+        OmniHand2025=sdk_class,
+    )
+
+
+def test_from_sdk_forwards_explicit_request_interval_to_the_initialized_hand(monkeypatch):
+    hand, calls = _interval_probe_hand()
+    monkeypatch.setitem(
+        __import__("sys").modules, "omnihand", _fake_sdk_module(hand)
+    )
+
+    AgilinkO10Backend.from_sdk(
+        Side.LEFT,
+        transport="rs485",
+        hand_device_id=1,
+        uart_port="/dev/ttyFAKE",
+        request_interval_ms=25,
+    )
+
+    assert calls == [25]
+
+
+def test_from_sdk_without_request_interval_never_calls_the_setter(monkeypatch):
+    hand, calls = _interval_probe_hand()
+    monkeypatch.setitem(
+        __import__("sys").modules, "omnihand", _fake_sdk_module(hand)
+    )
+
+    AgilinkO10Backend.from_sdk(
+        Side.LEFT,
+        transport="rs485",
+        hand_device_id=1,
+        uart_port="/dev/ttyFAKE",
+    )
+
+    assert calls == []

@@ -395,7 +395,7 @@ def test_A16_wire_enums_are_owned_by_interface_package():
         if path.suffix in {".msg", ".srv"}
     )
     assert "PHASE_FAULT_LATCHED=5" in interface_text
-    assert "ARM_REJECTED_TARGET_STALE=14" in interface_text
+    assert "CLEAR_FAULT_REJECTED_COMMUNICATION_UNHEALTHY=41" in interface_text
     assert "READ_SUCCESS=0" in interface_text
     literal = re.compile(r"\b(?:PHASE|EVENT|ARM|DISARM|CLEAR_FAULT|READ)_[A-Z0-9_]+\s*=\s*\d+")
     violations = []

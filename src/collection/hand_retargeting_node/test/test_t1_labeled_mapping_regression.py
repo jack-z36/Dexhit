@@ -82,25 +82,6 @@ def _process_after_freezing(session, frame, start_ns):
     return decisions[-1]
 
 
-def _mirror_left_frame_to_right(frame):
-    """Return a bilateral mirror inference, not a real right-glove sample."""
-    positions = np.asarray(frame.positions, dtype=np.float64)
-    origin = positions[0]
-    four_root_center = positions[[5, 9, 13, 17]].mean(axis=0)
-    y_axis = four_root_center - origin
-    y_axis /= np.linalg.norm(y_axis)
-    raw_x = positions[5] - positions[17]
-    x_axis = raw_x - float(raw_x @ y_axis) * y_axis
-    x_axis /= np.linalg.norm(x_axis)
-    reflection = np.eye(3) - 2.0 * np.outer(x_axis, x_axis)
-    mirrored = origin + (reflection @ (positions - origin).T).T
-    return RawHandFrameValue(
-        tuple(name.replace("left", "right", 1) for name in frame.node_names),
-        tuple(tuple(float(value) for value in point) for point in mirrored),
-        frame.received_at_ns,
-    )
-
-
 def _canonical_lateral_frame(lateral_by_finger, stamp_ns):
     """Build a pure-lateral 21-node left frame with constant finger lengths."""
     suffixes = (
@@ -126,7 +107,15 @@ def _canonical_lateral_frame(lateral_by_finger, stamp_ns):
 
 
 def _canonical_right_lateral_frame(lateral_by_finger, stamp_ns):
-    left = _canonical_lateral_frame(lateral_by_finger, stamp_ns)
+    """Encode physical lateral directions in the inferred right glove convention.
+
+    `lateral_by_finger` keeps its physical meaning: positive values are
+    displacements toward the index side.  The hypothesized Rokoko right
+    glove encoding inverts the lateral sign, so the fixture negates the
+    palm-frame X displacement before the left builder is reused.
+    """
+    inverted = tuple(-value for value in lateral_by_finger)
+    left = _canonical_lateral_frame(inverted, stamp_ns)
     return RawHandFrameValue(
         tuple(name.replace("left", "right", 1) for name in left.node_names),
         left.positions,
@@ -174,44 +163,51 @@ def test_real_labeled_thumb_flexion_has_deeper_left_thumb_mcp():
     )
 
 
-def test_bilateral_mirror_of_labeled_left_thumb_has_right_flexion_semantics():
-    """A bilateral mirror of labeled left poses must preserve flex semantics.
+def test_right_glove_convention_thumb_adduction_has_flexion_semantics():
+    """The inferred right glove encoding must still produce thumb adduction.
 
-    This is an offline symmetry inference from real left RawHandFrame samples.
-    It protects the right production path from an accidental copy of the
-    left-only correction, but is not evidence from a real right glove.
+    Inference from the real-machine-verified left correction: both Rokoko
+    gloves are hypothesized to deliver a laterally inverted component
+    encoding, so a physical right-thumb adduction (toward the little side)
+    arrives as a positive palm-frame X displacement.  This locks the
+    inferred production convention; it is not evidence from a real right
+    glove.
     """
     geometry, kinematics, coupling, session = _real_right_session()
-    flex_frame = _mirror_left_frame_to_right(REAL_LEFT_FLEX_G)
-    open_frame = _mirror_left_frame_to_right(REAL_LEFT_OPEN_I)
-    flex = _process_after_freezing(session, flex_frame, 2_000_000_000)
-    opened = session.process(
+    baseline = _canonical_right_lateral_frame((0.0,) * 5, 2_000_000_000)
+    adducted_frame = _canonical_right_lateral_frame(
+        (-0.25, 0.0, 0.0, 0.0, 0.0), 2_500_000_000
+    )
+    base = _process_after_freezing(session, baseline, 2_000_000_000)
+    adducted = session.process(
         RawHandFrameValue(
-            open_frame.node_names,
-            open_frame.positions,
+            adducted_frame.node_names,
+            adducted_frame.positions,
             2_500_000_000,
         )
     )
 
-    assert flex.command_positions is not None
-    assert opened.command_positions is not None
-    assert flex.has_valid_ik == (True,) * 5
-    assert opened.has_valid_ik == (True,) * 5
-    assert JOINT_LIMITS[Side.RIGHT].contains(np.asarray(flex.command_positions))
-    assert JOINT_LIMITS[Side.RIGHT].contains(np.asarray(opened.command_positions))
-    assert flex.command_positions[2] > opened.command_positions[2]
+    assert base.command_positions is not None
+    assert adducted.command_positions is not None
+    assert base.has_valid_ik == (True,) * 5
+    assert adducted.has_valid_ik == (True,) * 5
+    assert JOINT_LIMITS[Side.RIGHT].contains(np.asarray(base.command_positions))
+    assert JOINT_LIMITS[Side.RIGHT].contains(
+        np.asarray(adducted.command_positions)
+    )
+    assert adducted.command_positions[2] > base.command_positions[2]
 
-    flex_tip = kinematics.tip_position_and_jacobian(
-        coupling.evaluate(np.asarray(flex.command_positions)),
+    base_tip = kinematics.tip_position_and_jacobian(
+        coupling.evaluate(np.asarray(base.command_positions)),
         tip_link("right", "thumb_tip"),
     )[0]
-    open_tip = kinematics.tip_position_and_jacobian(
-        coupling.evaluate(np.asarray(opened.command_positions)),
+    adducted_tip = kinematics.tip_position_and_jacobian(
+        coupling.evaluate(np.asarray(adducted.command_positions)),
         tip_link("right", "thumb_tip"),
     )[0]
     palm_center = np.mean(np.asarray(geometry.finger_roots[1:]), axis=0)
-    assert np.linalg.norm(flex_tip - palm_center) < np.linalg.norm(
-        open_tip - palm_center
+    assert np.linalg.norm(adducted_tip - palm_center) < np.linalg.norm(
+        base_tip - palm_center
     )
 
 
@@ -224,7 +220,13 @@ def test_bilateral_mirror_of_labeled_left_thumb_has_right_flexion_semantics():
 def test_right_signed_lateral_input_moves_tip_in_physical_direction(
     finger_index, abad_index, lateral
 ):
-    """Right human lateral signs must follow independent O10 root ordering."""
+    """Right physical lateral directions follow the inferred glove encoding.
+
+    Physical lateral intents (positive toward the index side) are encoded
+    with an inverted palm-frame X by the inferred Rokoko right-glove
+    convention; the FK outcome must still follow the verified O10 root
+    ordering.  This is an inference, not real right-glove evidence.
+    """
     geometry, kinematics, coupling, session = _real_right_session()
     baseline = _canonical_right_lateral_frame((0.0,) * 5, 3_000_000_000)
     shifted_values = [0.0] * 5

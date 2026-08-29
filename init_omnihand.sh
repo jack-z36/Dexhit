@@ -197,11 +197,27 @@ for package in "${ALL_PACKAGE_NAMES[@]}"; do
 done
 
 if ((SKIP_TESTS == 0)); then
+    # Keep the system python3.12 interpreter (colcon test -DPython3_EXECUTABLE)
+    # but mirror the production runtime (start_omnihand_control.sh): prepend the
+    # numeric prefix site-packages so pinocchio/nlopt are importable by tests.
+    info "Test PYTHONPATH uses the numeric runtime: $NUMERIC_PREFIX/lib/python3.12/site-packages"
+    export PYTHONPATH="$NUMERIC_PREFIX/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+    # The injected prefix ships pytest 9, whose hookspec rejects the legacy
+    # 'path' argument still used by the ROS system-wide launch_testing plugin
+    # entry point. The CMake-side ament_add_pytest_test suites already run with
+    # plugin autoload disabled for exactly this reason; mirror that here.
+    export PYTEST_DISABLE_PLUGIN_AUTOLOAD="${PYTEST_DISABLE_PLUGIN_AUTOLOAD:-1}"
+    # The injected prefix also ships setuptools >= 77, which silently drops the
+    # packages' `tests_require=['pytest']`, so colcon would fall back to the
+    # unittest step and collect nothing. Pin the pytest step explicitly to keep
+    # the exact baseline test runner per ament_python package.
     info "Running the original 10-package software baseline."
     PATH="/usr/bin:/bin:$PATH" colcon test --packages-select "${CORE_PACKAGE_NAMES[@]}" \
+        --python-testing pytest \
         --event-handlers console_direct+
     info "Running the Launchpad package baseline separately."
     PATH="/usr/bin:/bin:$PATH" colcon test --packages-select rokoko_omnihand_launchpad \
+        --python-testing pytest \
         --event-handlers console_direct+
     info "Combined test result (existing baseline failures remain visible)."
     colcon test-result --verbose

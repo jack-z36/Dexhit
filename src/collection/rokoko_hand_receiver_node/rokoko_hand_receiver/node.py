@@ -1,6 +1,7 @@
 """ROS composition root for the Rokoko JSON v3 receiver."""
 
 from collections import Counter
+import json
 import math
 
 from geometry_msgs.msg import Point, Quaternion
@@ -16,7 +17,7 @@ from rclpy.time import Time
 from rokoko_omnihand_msgs.msg import RawHandFrame
 
 from .adapters.udp import UdpDatagramReceiver
-from .core.decoder import decode_scene, RawHandFrameValue
+from .core.decoder import _decompress, decode_scene, RawHandFrameValue
 
 
 _FRAME_ID = "rokoko_world_y_up_z_forward"
@@ -37,6 +38,9 @@ class RokokoHandReceiverNode(Node):
         max_datagram_bytes = self.declare_parameter(
             "max_datagram_bytes", 65535
         ).value
+        raw_json_dump_path = self.declare_parameter(
+            "raw_json_dump_path", ""
+        ).value
         self._validate_parameters(
             bind_address,
             udp_port,
@@ -44,6 +48,13 @@ class RokokoHandReceiverNode(Node):
             qos_depth,
             quaternion_epsilon,
             max_datagram_bytes,
+        )
+        if not isinstance(raw_json_dump_path, str):
+            raise ValueError("raw_json_dump_path must be a string")
+        self._dump_file = (
+            open(raw_json_dump_path, "a", encoding="utf-8")
+            if raw_json_dump_path
+            else None
         )
         self._actor_index = actor_index
         self._quaternion_epsilon = quaternion_epsilon
@@ -103,6 +114,18 @@ class RokokoHandReceiverNode(Node):
             raise ValueError("quaternion_norm_epsilon must be finite and non-negative")
 
     def _on_datagram(self, payload: bytes, received_at_ns: int) -> None:
+        if self._dump_file is not None:
+            try:
+                text = _decompress(payload).decode("utf-8")
+            except (RuntimeError, ValueError, UnicodeDecodeError) as exc:
+                self.get_logger().warning(f"raw dump skipped undecodable datagram: {exc}")
+            else:
+                self._dump_file.write(
+                    f'{{"received_at_ns": {received_at_ns}, "payload": '
+                    + json.dumps(text)
+                    + "}\n"
+                )
+                self._dump_file.flush()
         result = decode_scene(
             payload,
             actor_index=self._actor_index,
@@ -152,6 +175,9 @@ class RokokoHandReceiverNode(Node):
     def destroy_node(self):
         """Close UDP ingress before releasing ROS entities."""
         self._udp.close()
+        if self._dump_file is not None:
+            self._dump_file.close()
+            self._dump_file = None
         return super().destroy_node()
 
 

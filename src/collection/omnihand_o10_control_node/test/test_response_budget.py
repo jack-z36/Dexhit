@@ -118,7 +118,10 @@ def test_direct_launcher_matches_default_response_budget():
 
     for side in (Side.LEFT, Side.RIGHT):
         yaml_rates = _vector(yaml_text, f"{side.value}.max_joint_rates")
-        script_rates = _script_vector(script_text, f"{side.value}.max_joint_rates")
+        # The launcher templates per-side parameters through ${side}; expand
+        # the template for this side before parsing the literals.
+        expanded_script = script_text.replace("${side}", side.value)
+        script_rates = _script_vector(expanded_script, f"{side.value}.max_joint_rates")
         assert np.array_equal(script_rates, yaml_rates)
         assert not np.allclose(script_rates, 0.1)
 

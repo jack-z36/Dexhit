@@ -28,6 +28,13 @@ RUNTIME_PREFIX="${DEXHIT_COLLECTION_PREFIX:-/home/hit/miniforge3/envs/dexhit_col
 MODEL_FIXTURE="${OMNIHAND_O10_MODEL_FIXTURE:-/home/hit/dexhit-external/omnihand_o10_fixture-f4fd0d913c2151bcb4be0d29fbc02761b9638009}"
 UDP_PORT="${ROKOKO_UDP_PORT:-14043}"
 ACTOR_INDEX="${ROKOKO_ACTOR_INDEX:-0}"
+# HCAN adapter indices. The historical dual-adapter workstation enumerates
+# left on Device 1 and right on Device 0 (see the bringup manual's successful
+# log "Device 0 ... opened" + "Device 1 ... opened"). On a single-adapter
+# station only Device 0 exists, so export
+# OMNIHAND_O10_LEFT_CANFD_DEVICE_ID=0 before launching --sides left.
+LEFT_CANFD_DEVICE_ID="${OMNIHAND_O10_LEFT_CANFD_DEVICE_ID:-1}"
+RIGHT_CANFD_DEVICE_ID="${OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID:-0}"
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="${OMNIHAND_LOG_DIR:-/tmp/omnihand-control-$RUN_ID}"
@@ -45,8 +52,102 @@ die() {
   exit 1
 }
 
+usage() {
+  cat <<'EOF'
+Usage: start_omnihand_control.sh [--sides left|right|both] [--param key=value] ...
+
+Options:
+  --sides left|right|both   Wire up only the given hand side(s). Default: both,
+                            which reproduces the historical dual-side startup
+                            exactly.
+  --param key=value         Extra ROS parameter override passed through to the
+                            retargeting, provider and control nodes (repeatable).
+                            Diagnostics examples:
+                              o10.left.request_interval_ms=0   (E5)
+                              o10.left.feedback_read_period=0  (E3)
+                              left.error_poll_period=2.0       (E1)
+                              left.command_link_best_effort=true        (E2)
+                              o10.left.command_best_effort=true         (E2)
+  -h, --help                Show this help.
+
+Environment overrides:
+  OMNIHAND_O10_LEFT_CANFD_DEVICE_ID   HCAN device index for the left side.
+                                      Default 1 (historical dual-adapter
+                                      workstation). Use 0 on single-adapter
+                                      stations where the SDK scan reports
+                                      exactly one device.
+  OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID  HCAN device index for the right side.
+                                      Default 0.
+
+Automatic HCAN device binding:
+  For every selected side whose OMNIHAND_O10_*_CANFD_DEVICE_ID is NOT
+  explicitly set, the launcher runs `omnihand_o10_probe resolve` before
+  wiring the graph. It matches each side to the hand's factory serial number
+  (side -> serial persisted in o10_hand_binding.json at the worktree root)
+  and looks the device index up fresh on every start, so adapters may sit on
+  any USB port. Explicitly exporting OMNIHAND_O10_LEFT_CANFD_DEVICE_ID or
+  OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID is the per-side debug back door: it
+  skips the probe for that side and keeps the value above.
+
+Safety boundary is unchanged: there is no arm gate; fresh valid targets can
+move the physical O10 after feedback is ready. Ctrl-C stops every child.
+EOF
+}
+
+# --- argument parsing -------------------------------------------------------
+SIDES="both"
+declare -a EXTRA_PARAM_ARGS=()
+
+while (($# > 0)); do
+  case "$1" in
+    --sides)
+      [[ $# -ge 2 ]] || die "--sides requires a value: left|right|both"
+      SIDES="$2"
+      shift
+      ;;
+    --sides=*)
+      SIDES="${1#*=}"
+      ;;
+    --param)
+      [[ $# -ge 2 ]] || die "--param requires a key=value argument"
+      EXTRA_PARAM_ARGS+=("$2")
+      shift
+      ;;
+    --param=*)
+      EXTRA_PARAM_ARGS+=("${1#*=}")
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown option: $1 (see --help)"
+      ;;
+  esac
+  shift
+done
+
+case "$SIDES" in
+  left|right|both) ;;
+  *) die "invalid --sides value: '$SIDES' (expected left|right|both)" ;;
+esac
+
+side_selected() {
+  [[ "$SIDES" == "both" || "$SIDES" == "$1" ]]
+}
+
+# Generic override passthrough (E1/E2/E3/E5 diagnostics): rendered as ROS `-p`
+# flags and handed to every managed node. Nodes simply ignore overrides they
+# never declare, so one shared list cannot poison unrelated nodes.
+declare -a OVERRIDE_FLAGS=()
+for kv in "${EXTRA_PARAM_ARGS[@]:-}"; do
+  [[ -n "$kv" ]] || continue
+  [[ "$kv" == *=* ]] || die "invalid --param argument (expected key=value): $kv"
+  OVERRIDE_FLAGS+=("-p" "${kv/=/:=}")
+done
+
 cleanup() {
-  local index pid
+  local index pid attempts
   trap - EXIT INT TERM
   set +e
   if ((${#CHILD_PIDS[@]} > 0)); then
@@ -54,9 +155,21 @@ cleanup() {
   fi
   for ((index=${#CHILD_PIDS[@]}-1; index>=0; index--)); do
     pid="${CHILD_PIDS[index]}"
-    kill -TERM "$pid" 2>/dev/null || true
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  done
+  # Bounded grace period, then escalate to KILL for stubborn grandchildren.
+  for attempts in 1 2 3 4 5 6; do
+    local alive=0
+    for pid in "${CHILD_PIDS[@]}"; do
+      kill -0 "$pid" 2>/dev/null && alive=1
+    done
+    ((alive)) || break
+    sleep 0.5
   done
   for pid in "${CHILD_PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
     wait "$pid" 2>/dev/null || true
   done
 }
@@ -107,13 +220,66 @@ check_prerequisites() {
   done
 }
 
+# Resolve HCAN adapter indices for every selected side that was NOT pinned via
+# OMNIHAND_O10_*_CANFD_DEVICE_ID: omnihand_o10_probe maps each hand's factory
+# serial number (side -> serial persisted in o10_hand_binding.json) onto the
+# SDK's per-start device enumeration, so adapters may sit on any USB port. A
+# pinned side is a deliberate debug back door and skips the probe entirely.
+autodetect_canfd_device_ids() {
+  local left_pinned="${OMNIHAND_O10_LEFT_CANFD_DEVICE_ID+x}"
+  local right_pinned="${OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID+x}"
+  local probe_sides=""
+  case "$SIDES" in
+    left)
+      [[ -n "$left_pinned" ]] || probe_sides="left"
+      ;;
+    right)
+      [[ -n "$right_pinned" ]] || probe_sides="right"
+      ;;
+    both)
+      if [[ -z "$left_pinned" && -z "$right_pinned" ]]; then
+        probe_sides="both"
+      elif [[ -z "$left_pinned" ]]; then
+        probe_sides="left"
+      elif [[ -z "$right_pinned" ]]; then
+        probe_sides="right"
+      fi
+      ;;
+  esac
+  [[ -n "$probe_sides" ]] || return 0
+
+  log "autodetect: resolving canfd device id(s) for: $probe_sides"
+  local probe_lines
+  probe_lines="$(ros2 run omnihand_o10_hardware_adapter omnihand_o10_probe resolve --sides "$probe_sides")" \
+    || die "omnihand_o10_probe resolve --sides $probe_sides failed; fix the probe error above"
+  # probe stdout is exactly OMNIHAND_O10_*_CANFD_DEVICE_ID=<int> lines; refuse
+  # to eval anything else so stray output can never execute in this shell.
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" =~ ^OMNIHAND_O10_(LEFT|RIGHT)_CANFD_DEVICE_ID=[0-9]+$ ]] \
+      || die "unexpected probe output line; refusing to apply: $line"
+  done <<<"$probe_lines"
+  eval "$probe_lines"
+  LEFT_CANFD_DEVICE_ID="${OMNIHAND_O10_LEFT_CANFD_DEVICE_ID:-$LEFT_CANFD_DEVICE_ID}"
+  RIGHT_CANFD_DEVICE_ID="${OMNIHAND_O10_RIGHT_CANFD_DEVICE_ID:-$RIGHT_CANFD_DEVICE_ID}"
+  if [[ "$probe_sides" == "left" || "$probe_sides" == "both" ]]; then
+    log "autodetect: left -> canfd_device_id=$LEFT_CANFD_DEVICE_ID"
+  fi
+  if [[ "$probe_sides" == "right" || "$probe_sides" == "both" ]]; then
+    log "autodetect: right -> canfd_device_id=$RIGHT_CANFD_DEVICE_ID"
+  fi
+}
+
 start_node() {
   local name="$1"
   local log_file="$LOG_DIR/$name.log"
   shift
   CHILD_NAMES+=("$name")
   log "starting $name; log=$log_file"
-  "$@" >"$log_file" 2>&1 &
+  # Own session per child: lets cleanup TERM the whole ros2-run tree via its
+  # process group instead of only the CLI wrapper PID.
+  setsid "$@" >"$log_file" 2>&1 &
   CHILD_PIDS+=("$!")
 }
 
@@ -143,6 +309,7 @@ wait_for_processes() {
 
 source_environment
 check_prerequisites
+autodetect_canfd_device_ids
 
 log "logs: $LOG_DIR"
 log "hardware safety: no arm gate; fresh valid targets can move the physical O10"
@@ -159,65 +326,85 @@ start_node "hand_retargeting" \
     --ros-args \
     --params-file "$RETARGET_PARAMS" \
     -p 'smooth_time_constants:=[0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02]' \
-    -p recovery_confirmation_timeout_sec:=0.5
+    -p recovery_confirmation_timeout_sec:=0.5 \
+    -p "sides:=$SIDES" \
+    "${OVERRIDE_FLAGS[@]}"
 wait_for_node /hand_retargeting
+
+PROVIDER_PARAMS=(
+  --ros-args
+  -p "sides:=$SIDES"
+)
+if side_selected left; then
+  PROVIDER_PARAMS+=(
+    -p o10.left.transport:=hcan \
+    -p o10.left.hand_device_id:=1 \
+    -p "o10.left.canfd_device_id:=$LEFT_CANFD_DEVICE_ID" \
+    -p o10.left.canfd_channel_id:=0 \
+    -p o10.left.command_best_effort:=false
+  )
+fi
+if side_selected right; then
+  PROVIDER_PARAMS+=(
+    -p o10.right.transport:=hcan \
+    -p o10.right.hand_device_id:=1 \
+    -p "o10.right.canfd_device_id:=$RIGHT_CANFD_DEVICE_ID" \
+    -p o10.right.canfd_channel_id:=0 \
+    -p o10.right.command_best_effort:=false
+  )
+fi
+PROVIDER_PARAMS+=("${OVERRIDE_FLAGS[@]}")
 
 start_node "omnihand_o10_hardware_provider" \
   ros2 run omnihand_o10_hardware_adapter omnihand_o10_hardware_provider \
-    --ros-args \
-    -p o10.left.transport:=hcan \
-    -p o10.left.hand_device_id:=1 \
-    -p o10.left.canfd_device_id:=1 \
-    -p o10.left.canfd_channel_id:=0 \
-    -p o10.right.transport:=hcan \
-    -p o10.right.hand_device_id:=1 \
-    -p o10.right.canfd_device_id:=0 \
-    -p o10.right.canfd_channel_id:=0
+    "${PROVIDER_PARAMS[@]}"
 sleep 2
 wait_for_processes
 wait_for_node /omnihand_o10_hardware_provider
 
-CONTROL_PARAMS=(
-  --ros-args
-  -p 'left.max_joint_rates:=[8.221747440645,12.055238476275,6.011412609369,1.171863926339,10.596641887108,10.596641887108,1.209263838882,10.596641887108,1.321463576510,10.596641887108]'
-  -p left.max_time_credit:=0.1
-  -p 'left.slew_compare_epsilon:=[0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001]'
-  -p left.target_input_stale_timeout:=2.0
-  -p left.target_receive_stale_timeout:=2.0
-  -p left.control_check_period:=0.05
-  -p left.error_poll_period:=0.2
-  -p left.error_query_timeout:=2.0
-  -p left.command_readback_timeout:=4.0
-  -p left.provider_heartbeat_timeout:=5.0
-  -p left.init_read_retry_period:=0.1
-  -p left.init_error_retry_period:=0.1
-  -p left.read_service_timeout:=1.0
-  -p left.clear_fault_error_timeout:=1.0
-  -p left.clear_fault_read_timeout:=1.0
-  -p 'right.max_joint_rates:=[8.221747440645,12.055238476275,6.011412609369,1.171863926339,10.596641887108,10.596641887108,1.209263838882,10.596641887108,1.321463576510,10.596641887108]'
-  -p right.max_time_credit:=0.1
-  -p 'right.slew_compare_epsilon:=[0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001]'
-  -p right.target_input_stale_timeout:=2.0
-  -p right.target_receive_stale_timeout:=2.0
-  -p right.control_check_period:=0.05
-  -p right.error_poll_period:=0.2
-  -p right.error_query_timeout:=2.0
-  -p right.command_readback_timeout:=4.0
-  -p right.provider_heartbeat_timeout:=5.0
-  -p right.init_read_retry_period:=0.1
-  -p right.init_error_retry_period:=0.1
-  -p right.read_service_timeout:=1.0
-  -p right.clear_fault_error_timeout:=1.0
-  -p right.clear_fault_read_timeout:=1.0
-)
+add_control_params() {
+  local side="$1"
+  CONTROL_PARAMS+=(
+    -p "${side}.max_joint_rates:=[8.221747440645,12.055238476275,6.011412609369,1.171863926339,10.596641887108,10.596641887108,1.209263838882,10.596641887108,1.321463576510,10.596641887108]"
+    -p "${side}.max_time_credit:=0.1"
+    -p "${side}.slew_compare_epsilon:=[0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001,0.0001]"
+    -p "${side}.target_input_stale_timeout:=2.0"
+    -p "${side}.target_receive_stale_timeout:=2.0"
+    -p "${side}.control_check_period:=0.05"
+    -p "${side}.error_poll_period:=0.2"
+    -p "${side}.error_query_timeout:=2.0"
+    -p "${side}.command_readback_timeout:=4.0"
+    -p "${side}.provider_heartbeat_timeout:=5.0"
+    -p "${side}.init_read_retry_period:=0.1"
+    -p "${side}.init_error_retry_period:=0.1"
+    -p "${side}.read_service_timeout:=1.0"
+    -p "${side}.clear_fault_error_timeout:=1.0"
+    -p "${side}.clear_fault_read_timeout:=1.0"
+  )
+}
 
-start_node "o10_control_node" ros2 run omnihand_o10_control o10_control_node "${CONTROL_PARAMS[@]}"
+CONTROL_PARAMS=( --ros-args )
+
+if side_selected left; then add_control_params left; fi
+if side_selected right; then add_control_params right; fi
+
+start_node "o10_control_node" \
+  ros2 run omnihand_o10_control o10_control_node \
+    "${CONTROL_PARAMS[@]}" \
+    -p "sides:=$SIDES" \
+    "${OVERRIDE_FLAGS[@]}"
 wait_for_node /o10_control_node
 
 log "all nodes are running"
-log "left command: ros2 topic hz /o10_control/left/command"
-log "left state:   ros2 topic echo /o10_control/left/state"
-log "left arm is intentionally NOT called"
+if side_selected left; then
+  log "left command: ros2 topic hz /o10_control/left/command"
+  log "left state:   ros2 topic echo /o10_control/left/state"
+fi
+if side_selected right; then
+  log "right command: ros2 topic hz /o10_control/right/command"
+  log "right state:   ros2 topic echo /o10_control/right/state"
+fi
+log "arms are intentionally NOT called"
 log "press Ctrl-C to stop all nodes started by this script"
 
 while true; do

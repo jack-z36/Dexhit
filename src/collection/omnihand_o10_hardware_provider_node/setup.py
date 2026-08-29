@@ -16,6 +16,7 @@ setup(
     entry_points={
         "console_scripts": [
             "omnihand_o10_hardware_provider = omnihand_o10_hardware_adapter.node:main",
+            "omnihand_o10_probe = omnihand_o10_hardware_adapter.probe:main",
         ],
     },
 )

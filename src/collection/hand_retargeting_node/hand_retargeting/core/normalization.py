@@ -125,12 +125,10 @@ def build_palm_frame(
         ),
     )
     y_axis = _unit(_sub(center, origin), config.palm_y_epsilon, "palm longitudinal axis")
-    raw_x = (
-        _sub(positions[5], positions[17])
-        if side is Side.RIGHT
-        # Both sides use anatomical +X from little-finger root to index root.
-        else _sub(positions[5], positions[17])
-    )
+    # Both sides build anatomical +X from the little-finger root to the
+    # index-finger root.  The per-side Rokoko glove lateral convention is
+    # corrected downstream in correct_anatomical_human_vector.
+    raw_x = _sub(positions[5], positions[17])
     orthogonal_x = _sub(raw_x, _scale(_dot(raw_x, y_axis), y_axis))
     x_axis = _unit(orthogonal_x, config.palm_x_epsilon, "palm transverse axis")
     z_axis = _cross(x_axis, y_axis)

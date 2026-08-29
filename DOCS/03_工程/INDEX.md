@@ -13,3 +13,4 @@
 - [Launchpad 网页一键启动遥操作系统 Spec](08_Launchpad网页一键启动遥操作系统Spec.md)：两级启动、期望状态方块网格、三级状态灯、run 会话录制证据集与双接缝测试的网页编排工具决策。
 - [Launchpad 启动器任务](launchpad/INDEX.md)：M1–M4 的 tracer-bullet tickets（T01–T12）与执行前沿。
 - [Rokoko 到 OmniHand O10 全流程启动手册](09_Rokoko到OmniHand_O10全流程启动手册.md)：一键启动与终端 0–6 手动启动、检查、clear_fault 与停止步骤（`4fedfaa` 起 arm/disarm 已移除）。
+- [O10 设备自动绑定与探测](10_O10设备自动绑定与探测.md)：side→serial 绑定文件与启动时现查设备号的冻结契约、`omnihand_o10_probe`（scan/resolve/bind）决策规则与 T01–T04 票据。
